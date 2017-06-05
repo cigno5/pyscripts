@@ -21,7 +21,7 @@ def get_date(file):
                                      hour=h, minute=m, second=s)
 
 
-def _run_target(func):
+def _run_on_target(func):
     target = os.path.expanduser(args.target)
     if not os.path.isabs(target):
         target = os.path.join(os.getcwd(), target)
@@ -38,8 +38,27 @@ def _run_target(func):
         raise ValueError("target %s is not valid" % target)
 
 
+def _id(file):
+    return "%i%s" % (
+        os.stat(file).st_size,
+        get_date(file).strftime("%Y%m%dT%H%M%S")
+    )
+
+
 def rename():
+    index = {}
+
     def _rename(source):
+        source_id = _id(source)
+        if source_id in index:
+            if args.delete_duplicates:
+                print('Duplicated picture %s --> deleted' % (os.path.basename(source)))
+                if not args.dry_run:
+                    os.remove(source)
+            else:
+                print('Duplicated picture %s --> ignored' % (os.path.basename(source)))
+            return
+
         date = get_date(source)
 
         def _n():
@@ -50,17 +69,27 @@ def rename():
                 ext=os.path.splitext(source)[-1]
             )
 
-        for dups in range(0, 100):
-            dest = os.path.join(os.path.dirname(source), _n())
-            if not os.path.exists(dest):
-                print("Rename %s to %s" % (os.path.basename(source), os.path.basename(dest)))
-                if not args.dry_run:
-                    os.rename(source, dest)
-                break
-    _run_target(_rename)
+        dups = 0
 
-# def show_date():
-#     _run_target(lambda source: print("%s --> %s" % (os.path.basename(source), str(get_date(source)))))
+        if os.path.basename(source) == _n():
+            print('Picture %s already renamed' % os.path.basename(source))
+            index[source_id] = {
+                "source": source,
+                "destination": source
+            }
+        else:
+            for dups in range(0, 100):
+                dest = os.path.join(os.path.dirname(source), _n())
+                if not os.path.exists(dest):
+                    print("Picture %s ---> %s" % (os.path.basename(source), os.path.basename(dest)))
+                    if not args.dry_run:
+                        os.rename(source, dest)
+                    index[source_id] = {
+                        "source": source,
+                        "destination": dest
+                    }
+                    break
+    _run_on_target(_rename)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -72,6 +101,7 @@ if __name__ == '__main__':
     rename_parser.add_argument("--dry-run", action="store_true", help="Doesn't rename anything")
     rename_parser.add_argument("--prefix")
     rename_parser.add_argument("--ext", type=str, nargs="+", default=["cr2"])
+    rename_parser.add_argument("-d", "--delete-duplicates", action="store_true")
 
     args = parser.parse_args()
 
