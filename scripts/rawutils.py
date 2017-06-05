@@ -61,6 +61,11 @@ def rename():
             print('Already processed picture %s --> ignored' % (os.path.basename(source)))
             return
 
+        date = get_date(source)
+        if date is None:
+            print('Missing Exif data for picture %s --> ignored' % (os.path.basename(source)))
+            return
+
         source_id = _id(source)
         if source_id in index:
             if args.delete_duplicates:
@@ -70,8 +75,6 @@ def rename():
             else:
                 print('Duplicated picture %s --> ignored' % (os.path.basename(source)))
             return
-
-        date = get_date(source)
 
         def _n():
             return "{prefix}_{datetime}{suffix}{ext}".format(
@@ -103,10 +106,27 @@ def rename():
                     break
     _run_on_target(_rename)
 
+
+def inspect():
+    def _inspect(file):
+        print("file %s %s" % (file, "-" * 30))
+        tags = piexif.load(file)
+        for k, v in tags.items():
+            if type(v) == bytes:
+                print("   Area %s: binary" % k)
+            elif v is None:
+                print("   Area %s: empty" % k)
+            else:
+                print("   Area %s" % k)
+                for k2, v2 in v.items():
+                    print("      %s: %s" % (k2, 'binary?' if len(str(v2)) > 100 else v2))
+    _run_on_target(_inspect)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     subparsers = parser.add_subparsers()
+
     rename_parser = subparsers.add_parser("rename", help="Rename RAW files")
     rename_parser.set_defaults(command="rename")
     rename_parser.add_argument("target", help="File or directory to process")
@@ -115,7 +135,14 @@ if __name__ == '__main__':
     rename_parser.add_argument("--ext", type=str, nargs="+", default=["cr2"])
     rename_parser.add_argument("-d", "--delete-duplicates", action="store_true")
 
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect RAW files")
+    inspect_parser.set_defaults(command="inspect")
+    inspect_parser.add_argument("target", help="File or directory to process")
+    inspect_parser.add_argument("--ext", type=str, nargs="+", default=["cr2"])
+
     args = parser.parse_args()
 
     if args.command == 'rename':
         rename()
+    elif args.command == 'inspect':
+        inspect()
