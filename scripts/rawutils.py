@@ -28,7 +28,7 @@ def _run_on_target(func):
     assert os.path.exists(target), "target %s doesn't exists" % target
 
     if os.path.isdir(target):
-        for file in [os.path.join(target, i) for i in os.listdir(target)]:
+        for file in [os.path.join(target, i) for i in sorted(os.listdir(target))]:
             if os.path.isfile(file) and len([e for e in args.ext if file.lower().endswith(e.lower())]) > 0:
                 func(os.path.join(target, file))
 
@@ -45,10 +45,22 @@ def _id(file):
     )
 
 
+def _has_xmp(file):
+    n = os.path.splitext(os.path.basename(file))[0]
+    for f in os.listdir(os.path.dirname(file)):
+        if f.startswith(n) and f.lower().endswith(".xmp"):
+            return True
+    return False
+
+
 def rename():
     index = {}
 
     def _rename(source):
+        if _has_xmp(source):
+            print('Already processed picture %s --> ignored' % (os.path.basename(source)))
+            return
+
         source_id = _id(source)
         if source_id in index:
             if args.delete_duplicates:
