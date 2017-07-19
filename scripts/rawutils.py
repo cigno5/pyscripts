@@ -21,16 +21,24 @@ def get_date(file):
                                      hour=h, minute=m, second=s)
 
 
-def _run_on_target(func):
+def _run_on_target(func, recursive=False):
     target = os.path.expanduser(args.target)
     if not os.path.isabs(target):
         target = os.path.join(os.getcwd(), target)
     assert os.path.exists(target), "target %s doesn't exists" % target
 
     if os.path.isdir(target):
-        for file in [os.path.join(target, i) for i in sorted(os.listdir(target))]:
+        def _exec():
             if os.path.isfile(file) and len([e for e in args.ext if file.lower().endswith(e.lower())]) > 0:
                 func(os.path.join(target, file))
+
+        if recursive:
+            for root, dirs, files in os.walk(target):
+                for file in [os.path.join(root, i) for i in sorted(files)]:
+                    _exec()
+        else:
+            for file in [os.path.join(target, i) for i in sorted(os.listdir(target))]:
+                _exec()
 
     elif os.path.isfile(target):
         func(target)
@@ -56,24 +64,27 @@ def _has_xmp(file):
 def rename():
     index = {}
 
+    def _file_name(f):
+        return f if args.dry_run else os.path.basename(f)
+
     def _rename(source):
         if _has_xmp(source):
-            print('Already processed picture %s --> ignored' % (os.path.basename(source)))
+            print('Already processed picture %s --> ignored' % (_file_name(source)))
             return
 
         date = get_date(source)
         if date is None:
-            print('Missing Exif data for picture %s --> ignored' % (os.path.basename(source)))
+            print('Missing Exif data for picture %s --> ignored' % (_file_name(source)))
             return
 
         source_id = _id(source)
         if source_id in index:
             if args.delete_duplicates:
-                print('Duplicated picture %s --> deleted' % (os.path.basename(source)))
+                print('Duplicated picture %s --> deleted' % (_file_name(source)))
                 if not args.dry_run:
                     os.remove(source)
             else:
-                print('Duplicated picture %s --> ignored' % (os.path.basename(source)))
+                print('Duplicated picture %s --> ignored' % (_file_name(source)))
             return
 
         def _n():
@@ -87,7 +98,7 @@ def rename():
         dups = 0
 
         if os.path.basename(source) == _n():
-            print('Picture %s already renamed' % os.path.basename(source))
+            print('Picture %s already renamed' % _file_name(source))
             index[source_id] = {
                 "source": source,
                 "destination": source
@@ -96,7 +107,7 @@ def rename():
             for dups in range(0, 100):
                 dest = os.path.join(os.path.dirname(source), _n())
                 if not os.path.exists(dest):
-                    print("Picture %s ---> %s" % (os.path.basename(source), os.path.basename(dest)))
+                    print("Picture %s ---> %s" % (_file_name(source), _file_name(dest)))
                     if not args.dry_run:
                         os.rename(source, dest)
                     index[source_id] = {
@@ -104,7 +115,7 @@ def rename():
                         "destination": dest
                     }
                     break
-    _run_on_target(_rename)
+    _run_on_target(_rename, args.recursive)
 
 
 def inspect():
@@ -133,6 +144,7 @@ if __name__ == '__main__':
     rename_parser.add_argument("--dry-run", action="store_true", help="Doesn't rename anything")
     rename_parser.add_argument("--prefix")
     rename_parser.add_argument("--ext", type=str, nargs="+", default=["cr2"])
+    rename_parser.add_argument("--recursive", action="store_true", help="Check recursively in sub folders")
     rename_parser.add_argument("-d", "--delete-duplicates", action="store_true")
 
     inspect_parser = subparsers.add_parser("inspect", help="Inspect RAW files")
