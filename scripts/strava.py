@@ -142,8 +142,8 @@ def update_wrong_gear():
     print("Done.")
 
 
-CLIENT_ID = 18401
-CLIENT_SECRET = "b82e912a54c6efd49508ea021678d01705fcf438"
+CLIENT_ID = 99999
+CLIENT_SECRET = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 token = None
 client = Client()
 
