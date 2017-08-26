@@ -8,17 +8,19 @@ from tempfile import mkdtemp
 def showcase():
     assert os.path.exists(args.target), "Target folder %s doesn't exist" % args.target
 
+    source_files = [os.path.join(r, f) for r, fd, fl in os.walk(os.path.abspath(args.target)) for f in fl
+                    if os.path.splitext(f)[1].lower() in ['.jpg']]
+
     tmp = mkdtemp(prefix="showcase_")
     first = None
     c = 0
-    for root, folders, files in os.walk(os.path.abspath(args.target)):
-        for file in files:
-            c += 1
-            link_name = "%04i_%s" % (c, file)
-            if not first:
-                first = os.path.join(tmp, link_name)
-            os.symlink(os.path.join(root, file), os.path.join(tmp, link_name))
-            print("%s -> %s" % (os.path.join(root, file), os.path.join(tmp, link_name)))
+    for file in sorted(source_files):
+        c += 1
+        link_name = "%04i_%s" % (c, os.path.basename(file))
+        if not first:
+            first = os.path.join(tmp, link_name)
+        os.symlink(file, os.path.join(tmp, link_name))
+        print("%s -> %s" % (file, os.path.join(tmp, link_name)))
 
     subprocess.call(["xdg-open", first])
 
