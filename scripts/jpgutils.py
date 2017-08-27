@@ -2,6 +2,7 @@
 import argparse
 import os
 import subprocess
+import shutil
 from tempfile import mkdtemp
 
 
@@ -25,16 +26,49 @@ def showcase():
     subprocess.call(["xdg-open", first])
 
 
+def catalog():
+    assert os.path.exists(args.source), "Source folder doesn't exist"
+
+    if not os.path.exists(args.target):
+        os.makedirs(args.target, exist_ok=True)
+
+    for root, folders, files in os.walk(args.source):
+        relative_root = root[len(args.source):]
+        for file in [f for f in files if os.path.splitext(f)[1] == '.jpg']:
+            print("Copying %s..." % os.path.join(relative_root, file), end='')
+            source_picture = os.path.join(root, file)
+            target_picture = os.path.join(args.target, relative_root, file)
+
+            os.makedirs(os.path.dirname(target_picture), exist_ok=True)
+            shutil.copyfile(source_picture, target_picture)
+            print("resizing...", end='')
+            subprocess.call(["mogrify", "-resize", args.resize, target_picture])
+            print('done')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     subparsers = parser.add_subparsers()
 
-    rename_parser = subparsers.add_parser("showcase", help="Symlink all pictures in folder and open viewer")
-    rename_parser.set_defaults(command="showcase")
-    rename_parser.add_argument("target", help="File or directory to view")
+    showcase_parser = subparsers.add_parser("showcase", help="Symlink all pictures in folder and open viewer")
+    showcase_parser.set_defaults(command="showcase")
+    showcase_parser.add_argument("target", help="File or directory to view")
+
+    catalog_parser = subparsers.add_parser("catalog", help="Create catalog with smaller pictures")
+    catalog_parser.set_defaults(command="catalog")
+    catalog_parser.add_argument("source", help="Original directory from where creating the catalog")
+    catalog_parser.add_argument("target", help="Final destination of the catalog")
+    catalog_parser.add_argument("--resize", default="1920x1080",
+                                help="Resize value of the pictures (default 1920x1080")
 
     args = parser.parse_args()
-
-    if args.command == 'showcase':
-        showcase()
+    if args.command:
+        if args.command == 'showcase':
+            showcase()
+        elif args.command == 'catalog':
+            catalog()
+        else:
+            parser.print_usage()
+    else:
+        parser.print_usage()
