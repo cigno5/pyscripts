@@ -4,6 +4,7 @@ import os
 import subprocess
 import shutil
 from tempfile import mkdtemp
+import sys
 
 
 def showcase():
@@ -32,18 +33,30 @@ def catalog():
     if not os.path.exists(args.target):
         os.makedirs(args.target, exist_ok=True)
 
+    exts = ['.' + e for e in args.ext.split(",")]
+
     for root, folders, files in os.walk(args.source):
+        if os.path.basename(os.path.normpath(root))[0] == '.':
+            continue
+
         relative_root = root[len(args.source):]
-        for file in [f for f in files if os.path.splitext(f)[1] == '.jpg']:
-            print("Copying %s..." % os.path.join(relative_root, file), end='')
+        for file in [f for f in files if os.path.splitext(f)[1].lower() in exts]:
             source_picture = os.path.join(root, file)
             target_picture = os.path.join(args.target, relative_root, file)
 
-            os.makedirs(os.path.dirname(target_picture), exist_ok=True)
-            shutil.copyfile(source_picture, target_picture)
-            print("resizing...", end='')
-            subprocess.call(["mogrify", "-resize", args.resize, target_picture])
-            print('done')
+            if not os.path.exists(target_picture):
+                print("Copying %s..." % os.path.join(relative_root, file), end='')
+                sys.stdout.flush()
+                os.makedirs(os.path.dirname(target_picture), exist_ok=True)
+                shutil.copyfile(source_picture, target_picture)
+                print("resizing...", end='')
+                sys.stdout.flush()
+                subprocess.call(["mogrify", "-resize", args.resize, target_picture])
+                print('done')
+            else:
+                print("File %s already exist, skipped" % target_picture)
+
+    print("done")
 
 
 if __name__ == '__main__':
@@ -61,6 +74,8 @@ if __name__ == '__main__':
     catalog_parser.add_argument("target", help="Final destination of the catalog")
     catalog_parser.add_argument("--resize", default="1920x1080",
                                 help="Resize value of the pictures (default 1920x1080")
+    catalog_parser.add_argument("--ext", default="jpg,jpeg",
+                                help="Extensions valid to be copied, separated by comma")
 
     args = parser.parse_args()
     if args.command:
