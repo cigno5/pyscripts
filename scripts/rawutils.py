@@ -1,4 +1,3 @@
-#!/home/luca/dev/tools/miniconda3/envs/pyscripts/bin/python
 import os
 
 import piexif
@@ -12,6 +11,8 @@ def get_date(file):
     tags = piexif.load(file)
 
     if '0th' in tags and piexif.ImageIFD.DateTime in tags['0th']:
+        if piexif.ExifIFD.ImageUniqueID in tags['Exif']:
+            print(tags['Exif'][piexif.ExifIFD.ImageUniqueID])
         date = tags['0th'][piexif.ImageIFD.DateTime].decode('utf8')
 
         match = re.search("(\d{2,4}).(\d{1,2}).(\d{1,2}).*?(\d{1,2}).(\d{1,2}).(\d{1,2})", date)
@@ -53,12 +54,9 @@ def _id(file):
     )
 
 
-def _has_xmp(file):
+def _get_xmp_files(file):
     n = os.path.splitext(os.path.basename(file))[0]
-    for f in os.listdir(os.path.dirname(file)):
-        if f.startswith(n) and f.lower().endswith(".xmp"):
-            return True
-    return False
+    return [f for f in os.listdir(os.path.dirname(file)) if f.startswith(n) and f.lower().endswith(".xmp")]
 
 
 def rename():
@@ -68,9 +66,9 @@ def rename():
         return f if args.dry_run else os.path.basename(f)
 
     def _rename(source):
-        if _has_xmp(source):
-            print('Already processed picture %s --> ignored' % (_file_name(source)))
-            return
+        # if _has_xmp(source):
+        #     print('Already processed picture %s --> ignored' % (_file_name(source)))
+        #     return
 
         date = get_date(source)
         if date is None:
@@ -87,7 +85,7 @@ def rename():
                 print('Duplicated picture %s --> ignored' % (_file_name(source)))
             return
 
-        def _n():
+        def new_name():
             return "{prefix}_{datetime}{suffix}{ext}".format(
                 prefix=args.prefix if args.prefix else "IMG",
                 datetime=date.strftime("%Y%m%dT%H%M%S"),
@@ -97,7 +95,7 @@ def rename():
 
         dups = 0
 
-        if os.path.basename(source) == _n():
+        if os.path.basename(source) == new_name():
             print('Picture %s already renamed' % _file_name(source))
             index[source_id] = {
                 "source": source,
@@ -105,17 +103,26 @@ def rename():
             }
         else:
             for dups in range(0, 100):
-                dest = os.path.join(os.path.dirname(source), _n())
+                dest = os.path.join(os.path.dirname(source), new_name())
                 if not os.path.exists(dest):
                     print("Picture %s ---> %s" % (_file_name(source), _file_name(dest)))
                     if not args.dry_run:
                         os.rename(source, dest)
+
+                    for xmp_file in _get_xmp_files(source):
+                        print("   >> XMP %s ---> %s" % (_file_name(xmp_file), _file_name(xmp_file + ".xmp")))
+                        # if not args.dry_run:
+                        #     os.rename(source + ".xmp", dest + ".xmp")
+
                     index[source_id] = {
                         "source": source,
                         "destination": dest
                     }
                     break
     _run_on_target(_rename, args.recursive)
+
+
+# def new_rename():
 
 
 def inspect():
@@ -129,9 +136,17 @@ def inspect():
                 print("   Area %s: empty" % k)
             else:
                 print("   Area %s" % k)
+
+                tags_ref = piexif.TAGS[k]
                 for k2, v2 in v.items():
-                    print("      %s: %s" % (k2, 'binary?' if len(str(v2)) > 100 else v2))
+                    vtype = 'binary?' if len(str(v2)) > 100 else v2
+                    if k2 in tags_ref:
+                        print("      %s.%s: %s" % (k, tags_ref[k2]['name'], vtype))
+                    else:
+                        print("      %s: %s" % (k2, vtype))
+
     _run_on_target(_inspect)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
