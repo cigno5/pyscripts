@@ -1,10 +1,9 @@
-#!/home/luca/dev/tools/miniconda3/envs/pyscripts/bin/python
 import argparse
 import os
-import subprocess
 import shutil
-from tempfile import mkdtemp
+import subprocess
 import sys
+from tempfile import mkdtemp
 
 
 def showcase():

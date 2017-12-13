@@ -109,33 +109,52 @@ def rename():
     name_segments = name_segments_builder()
 
     def rename_in_folder(target):
-        print('Scanning %s/ %s ...' % (target, "(dry run)" if args.dry_run else ""))
+        target = os.path.abspath(target)
+        print('Scanning %s/%s...' % (target, " (dry run) " if args.dry_run else ""))
+        images_count = 0
+        side_files_count = 0
 
         duplicates = dict()
 
-        images_info = sorted([ImageInfo(image_file, name_segments) for image_file in find_images(target)],
-                             key=lambda ii: ii.name)
+        images_info = sorted(
+            [ImageInfo(image_file, name_segments) for image_file in find_images(target)],
+            key=lambda ii: ii.name
+        )
         for image_info in images_info:
             if args.verbose:
                 print("\n%s" % image_info)
             new_name = image_info.get_new_image_filename()
 
             dups = duplicates[new_name] if new_name in duplicates else 0
-
+            _first = True
             for old, new in image_info.get_filename_transformations(dups):
                 print("{orig:40s} -> {new}".format(orig=old, new=new))
-
                 if not args.dry_run:
                     os.rename(os.path.join(target, old), os.path.join(target, new))
 
                 duplicates[new_name] = dups + 1
 
+                if _first:
+                    images_count += 1
+                else:
+                    side_files_count += 1
+                _first = False
+
+        print('...renamed %i images and %i side files\n' % (images_count, side_files_count))
+        return images_count, side_files_count
+
+    target_folder = os.path.expanduser(args.target)
     # if recursive is better to run the function by each folder, without putting together images from different folders
     if args.recursive:
-        for root, dirs, files in os.walk(os.path.expanduser(args.target)):
-            rename_in_folder(root)
+        tot_imgs, tot_sf = 0, 0
+        for root, dirs, files in os.walk(target_folder):
+            imgs, sf = rename_in_folder(root)
+            tot_imgs += imgs
+            tot_sf += sf
+        print('Totally renamed %i images and %i side files' % (tot_imgs, tot_sf))
     else:
-        rename_in_folder(os.path.expanduser(args.target))
+        rename_in_folder(target_folder)
+    print('Done.')
 
 
 def inspect():
@@ -169,9 +188,11 @@ def inspect():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
+
     def __add_std_options(_parser):
         _parser.add_argument("--recursive", action="store_true", help="Check recursively in sub folders")
         _parser.add_argument("--verbose", action="store_true", help="Verbose logging")
+
 
     subparsers = parser.add_subparsers()
 
