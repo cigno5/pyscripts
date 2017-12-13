@@ -47,13 +47,21 @@ class ImageInfo:
 
         self.date = datetime.strptime(date_value, "%Y:%m:%d %H:%M:%S")
 
+        simple_file = os.path.basename(image_file).lower()
+
         def side_file(file):
             lcase_file = file.lower()
             lcase_name = self.name.lower()
-            lcase_ext = self.ext.lower()
-            return lcase_file != "%s.%s" % (lcase_name, lcase_ext) and lcase_file.startswith(lcase_name)
+            return lcase_file != simple_file and lcase_file.startswith(lcase_name)
 
-        self.side_files = [(f, f[len(self.name):]) for f in os.listdir(os.path.dirname(image_file)) if side_file(f)]
+        _side_files = [f for f in os.listdir(os.path.dirname(image_file)) if side_file(f)]
+        # find derivative image files and their side files
+        for _derivative_image, _derivative_name, _ in [(i,) + split_filename(i) for i in _side_files if is_image(i)]:
+            _side_files.remove(_derivative_image)
+            [_side_files.remove(_deriv_side_file) for _deriv_side_file in
+             [sf for sf in _side_files if sf.startswith(_derivative_name)]]
+
+        self.side_files = [(f, f[len(self.name):]) for f in _side_files]
 
     def get_new_image_filename(self):
         return "".join([fn(self) for fn in self.name_segments] + ['.', self.ext])
@@ -115,8 +123,7 @@ def rename():
             dups = duplicates[new_name] if new_name in duplicates else 0
 
             for old, new in image_info.get_filename_transformations(dups):
-                if args.dry_run or args.verbose:
-                    print("{orig:20s} -> {new:20s}".format(orig=old, new=new))
+                print("{orig:40s} -> {new}".format(orig=old, new=new))
 
                 if not args.dry_run:
                     os.rename(os.path.join(target, old), os.path.join(target, new))
