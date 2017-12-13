@@ -1,4 +1,5 @@
 import os
+from collections import namedtuple
 
 import piexif
 import argparse
@@ -7,12 +8,28 @@ import datetime
 import re
 
 
+IMAGE_EXTS = ["cr2"]
+DATE_TAGS = [piexif.ExifIFD.DateTimeOriginal, piexif.ImageIFD.DateTime]
+
+
+def extract_date(file):
+    tags = piexif.load(file)
+    date_value = None
+    for sub_tags in tags.values():
+        for date_tag in DATE_TAGS:
+            if date_tag in sub_tags:
+                date_value = sub_tags[date_tag].decode('utf8')
+                break
+        if date_value:
+            break
+
+    return datetime.datetime.strptime(date_value, "%Y:%m:%d %H:%M:%S") if date_value else None
+
+
 def get_date(file):
     tags = piexif.load(file)
 
     if '0th' in tags and piexif.ImageIFD.DateTime in tags['0th']:
-        if piexif.ExifIFD.ImageUniqueID in tags['Exif']:
-            print(tags['Exif'][piexif.ExifIFD.ImageUniqueID])
         date = tags['0th'][piexif.ImageIFD.DateTime].decode('utf8')
 
         match = re.search("(\d{2,4}).(\d{1,2}).(\d{1,2}).*?(\d{1,2}).(\d{1,2}).(\d{1,2})", date)
@@ -30,7 +47,7 @@ def _run_on_target(func, recursive=False):
 
     if os.path.isdir(target):
         def _exec():
-            if os.path.isfile(file) and len([e for e in args.ext if file.lower().endswith(e.lower())]) > 0:
+            if os.path.isfile(file) and len([e for e in IMAGE_EXTS if file.lower().endswith(e.lower())]) > 0:
                 func(os.path.join(target, file))
 
         if recursive:
@@ -122,7 +139,47 @@ def rename():
     _run_on_target(_rename, args.recursive)
 
 
-# def new_rename():
+def new_rename():
+
+    def side_file(file):
+        lcase_file = file.lower()
+        lcase_name = name.lower()
+        lcase_ext = ext.lower()
+        return lcase_file != "%s.%s" % (lcase_name, lcase_ext) and lcase_file.startswith(lcase_name)
+
+    def find_images():
+        def is_image(file):
+            return os.path.splitext(file)[-1][1:].lower() in IMAGE_EXTS
+
+        if os.path.isfile(target):
+            for _image_file in [t for t in [target] if is_image(t)]:
+                yield _image_file
+        elif args.recursive:
+            raise NotImplemented('Need to be re-implemented!')
+            for root, dirs, files in os.walk(target):
+                for _image_file in [f for f in sorted(files) if is_image(f)]:
+                    yield os.path.join(root, _image_file)
+        else:
+            for _image_file in [f for f in os.listdir(target) if is_image(f)]:
+                yield os.path.join(target, _image_file)
+
+    target = os.path.expanduser(args.target)
+
+    image_map = dict
+    ImageData = namedtuple('ImageData', 'name, ext, date, side_files')
+
+    for image_file in find_images():
+        image_folder = os.path.dirname(image_file)
+        spl = os.path.splitext(image_file)
+        name = os.path.basename(spl[-2])
+        ext = spl[-1][1:]
+        date = extract_date(image_file)
+        data = ImageData(
+            name,
+            ext,
+            date,
+            [f for f in os.listdir(image_folder) if side_file(f)])
+        print(data)
 
 
 def inspect():
@@ -156,20 +213,19 @@ if __name__ == '__main__':
     rename_parser = subparsers.add_parser("rename", help="Rename RAW files")
     rename_parser.set_defaults(command="rename")
     rename_parser.add_argument("target", help="File or directory to process")
-    rename_parser.add_argument("--dry-run", action="store_true", help="Doesn't rename anything")
-    rename_parser.add_argument("--prefix")
-    rename_parser.add_argument("--ext", type=str, nargs="+", default=["cr2"])
     rename_parser.add_argument("--recursive", action="store_true", help="Check recursively in sub folders")
+    rename_parser.add_argument("--dry-run", action="store_true", help="Doesn't rename anything")
+    rename_parser.add_argument("--name-template", default="IMG_{datetime}",
+                               help="The template for the name of the file (default IMG_{creation_date}}")
     rename_parser.add_argument("-d", "--delete-duplicates", action="store_true")
 
     inspect_parser = subparsers.add_parser("inspect", help="Inspect RAW files")
     inspect_parser.set_defaults(command="inspect")
     inspect_parser.add_argument("target", help="File or directory to process")
-    inspect_parser.add_argument("--ext", type=str, nargs="+", default=["cr2"])
 
     args = parser.parse_args()
 
     if args.command == 'rename':
-        rename()
+        new_rename()
     elif args.command == 'inspect':
         inspect()
