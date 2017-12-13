@@ -61,7 +61,7 @@ class ImageInfo:
     def get_filename_transformations(self, dups):
         new_name = "".join([fn(self) for fn in self.name_segments])
         if dups > 0:
-            new_name += "-%i" % dups
+            new_name += "_%i" % dups
 
         ret = [(os.path.basename(self.file), new_name + "." + self.ext)]
         for side_file, file_rest in self.side_files:
@@ -70,14 +70,6 @@ class ImageInfo:
         return ret
 
     def __str__(self):
-        for cazzo in dir(self):
-
-            if type(cazzo) != str:
-            # if str(cazzo) == 'get_filename_transformations':
-                print(type(cazzo))
-                # for fregna in dir(cazzo):
-                #     print(fregna)
-
         return ", ".join(["{}={}".format(attr, getattr(self, attr)) for attr in dir(self)
                           if not attr.startswith("__")
                           and attr not in ['name_segments']
@@ -89,9 +81,6 @@ def rename():
     def name_segments_builder():
         def _const(value):
             return lambda _: value
-
-        # def _seq():
-        #     return lambda data: '' if data.name
 
         _s = 0
         segments = list()
@@ -112,21 +101,26 @@ def rename():
     name_segments = name_segments_builder()
 
     def rename_in_folder(target):
-        print('Scanning %s/ ...' % target)
+        print('Scanning %s/ %s ...' % (target, "(dry run)" if args.dry_run else ""))
 
         duplicates = dict()
 
         images_info = sorted([ImageInfo(image_file, name_segments) for image_file in find_images(target)],
                              key=lambda ii: ii.name)
         for image_info in images_info:
-            print()
-            print(image_info)
+            if args.verbose:
+                print("\n%s" % image_info)
             new_name = image_info.get_new_image_filename()
 
             dups = duplicates[new_name] if new_name in duplicates else 0
 
             for old, new in image_info.get_filename_transformations(dups):
-                print("{orig:20s} -> {new:20s}".format(orig=old, new=new))
+                if args.dry_run or args.verbose:
+                    print("{orig:20s} -> {new:20s}".format(orig=old, new=new))
+
+                if not args.dry_run:
+                    os.rename(os.path.join(target, old), os.path.join(target, new))
+
                 duplicates[new_name] = dups + 1
 
     # if recursive is better to run the function by each folder, without putting together images from different folders
@@ -170,6 +164,7 @@ if __name__ == '__main__':
 
     def __add_std_options(_parser):
         _parser.add_argument("--recursive", action="store_true", help="Check recursively in sub folders")
+        _parser.add_argument("--verbose", action="store_true", help="Verbose logging")
 
     subparsers = parser.add_subparsers()
 
@@ -179,7 +174,7 @@ if __name__ == '__main__':
     rename_parser.add_argument("--dry-run", action="store_true", help="Doesn't rename anything")
     rename_parser.add_argument("--name-template", default="IMG_{datetime}",
                                help="The template for the name of the file (default IMG_{creation_date}}")
-    rename_parser.add_argument("-d", "--delete-duplicates", action="store_true")
+    # rename_parser.add_argument("-d", "--delete-duplicates", action="store_true")
     __add_std_options(rename_parser)
 
     inspect_parser = subparsers.add_parser("inspect", help="Inspect RAW files")
