@@ -1,142 +1,13 @@
+import argparse
 import os
-from collections import namedtuple
+import re
+from datetime import datetime
 
 import piexif
-import argparse
-from PIL import Image
-import datetime
-import re
-
 
 IMAGE_EXTS = ["cr2"]
 DATE_TAGS = [piexif.ExifIFD.DateTimeOriginal, piexif.ImageIFD.DateTime]
 
-
-def extract_date(file):
-    tags = piexif.load(file)
-    date_value = None
-    for sub_tags in tags.values():
-        for date_tag in DATE_TAGS:
-            if date_tag in sub_tags:
-                date_value = sub_tags[date_tag].decode('utf8')
-                break
-        if date_value:
-            break
-
-    return datetime.datetime.strptime(date_value, "%Y:%m:%d %H:%M:%S") if date_value else None
-
-
-# def get_date(file):
-#     tags = piexif.load(file)
-#
-#     if '0th' in tags and piexif.ImageIFD.DateTime in tags['0th']:
-#         date = tags['0th'][piexif.ImageIFD.DateTime].decode('utf8')
-#
-#         match = re.search("(\d{2,4}).(\d{1,2}).(\d{1,2}).*?(\d{1,2}).(\d{1,2}).(\d{1,2})", date)
-#         if match:
-#             year, month, day, h, m, s = [int(g) for g in match.groups()]
-#             return datetime.datetime(year=year, month=month, day=day,
-#                                      hour=h, minute=m, second=s)
-#
-#
-# def _run_on_target(func, recursive=False):
-#     target = os.path.expanduser(args.target)
-#     if not os.path.isabs(target):
-#         target = os.path.join(os.getcwd(), target)
-#     assert os.path.exists(target), "target %s doesn't exists" % target
-#
-#     if os.path.isdir(target):
-#         def _exec():
-#             if os.path.isfile(file) and len([e for e in IMAGE_EXTS if file.lower().endswith(e.lower())]) > 0:
-#                 func(os.path.join(target, file))
-#
-#         if recursive:
-#             for root, dirs, files in os.walk(target):
-#                 for file in [os.path.join(root, i) for i in sorted(files)]:
-#                     _exec()
-#         else:
-#             for file in [os.path.join(target, i) for i in sorted(os.listdir(target))]:
-#                 _exec()
-#
-#     elif os.path.isfile(target):
-#         func(target)
-#     else:
-#         raise ValueError("target %s is not valid" % target)
-#
-#
-# def _id(file):
-#     return "%i%s" % (
-#         os.stat(file).st_size,
-#         get_date(file).strftime("%Y%m%dT%H%M%S")
-#     )
-#
-#
-# def _get_xmp_files(file):
-#     n = os.path.splitext(os.path.basename(file))[0]
-#     return [f for f in os.listdir(os.path.dirname(file)) if f.startswith(n) and f.lower().endswith(".xmp")]
-#
-#
-# def rename():
-#     index = {}
-#
-#     def _file_name(f):
-#         return f if args.dry_run else os.path.basename(f)
-#
-#     def _rename(source):
-#         # if _has_xmp(source):
-#         #     print('Already processed picture %s --> ignored' % (_file_name(source)))
-#         #     return
-#
-#         date = get_date(source)
-#         if date is None:
-#             print('Missing Exif data for picture %s --> ignored' % (_file_name(source)))
-#             return
-#
-#         source_id = _id(source)
-#         if source_id in index:
-#             if args.delete_duplicates:
-#                 print('Duplicated picture %s --> deleted' % (_file_name(source)))
-#                 if not args.dry_run:
-#                     os.remove(source)
-#             else:
-#                 print('Duplicated picture %s --> ignored' % (_file_name(source)))
-#             return
-#
-#         def new_name():
-#             return "{prefix}_{datetime}{suffix}{ext}".format(
-#                 prefix=args.prefix if args.prefix else "IMG",
-#                 datetime=date.strftime("%Y%m%dT%H%M%S"),
-#                 suffix='' if dups == 0 else "-%i" % dups,
-#                 ext=os.path.splitext(source)[-1]
-#             )
-#
-#         dups = 0
-#
-#         if os.path.basename(source) == new_name():
-#             print('Picture %s already renamed' % _file_name(source))
-#             index[source_id] = {
-#                 "source": source,
-#                 "destination": source
-#             }
-#         else:
-#             for dups in range(0, 100):
-#                 dest = os.path.join(os.path.dirname(source), new_name())
-#                 if not os.path.exists(dest):
-#                     print("Picture %s ---> %s" % (_file_name(source), _file_name(dest)))
-#                     if not args.dry_run:
-#                         os.rename(source, dest)
-#
-#                     for xmp_file in _get_xmp_files(source):
-#                         print("   >> XMP %s ---> %s" % (_file_name(xmp_file), _file_name(xmp_file + ".xmp")))
-#                         # if not args.dry_run:
-#                         #     os.rename(source + ".xmp", dest + ".xmp")
-#
-#                     index[source_id] = {
-#                         "source": source,
-#                         "destination": dest
-#                     }
-#                     break
-#     _run_on_target(_rename, args.recursive)
 
 def is_image(file):
     return os.path.splitext(file)[-1][1:].lower() in IMAGE_EXTS
@@ -151,29 +22,112 @@ def find_images(target):
             yield os.path.join(target, _image_file)
 
 
-def rename():
-    def rename_in_folder(target):
-        print('Scanning %s/ ...' % target)
+def split_filename(file):
+    bfile = os.path.basename(file)
+    dot_idx = bfile.find(".")
+    return bfile[:dot_idx], bfile[dot_idx + 1:]
+
+
+class ImageInfo:
+    def __init__(self, image_file, new_name_segments):
+        self.file = image_file
+        self.name, self.ext = split_filename(image_file)
+
+        self.name_segments = new_name_segments
+
+        tags = piexif.load(image_file)
+        date_value = None
+        for sub_tags in tags.values():
+            for date_tag in DATE_TAGS:
+                if date_tag in sub_tags:
+                    date_value = sub_tags[date_tag].decode('utf8')
+                    break
+            if date_value:
+                break
+
+        self.date = datetime.strptime(date_value, "%Y:%m:%d %H:%M:%S")
 
         def side_file(file):
             lcase_file = file.lower()
-            lcase_name = name.lower()
-            lcase_ext = ext.lower()
+            lcase_name = self.name.lower()
+            lcase_ext = self.ext.lower()
             return lcase_file != "%s.%s" % (lcase_name, lcase_ext) and lcase_file.startswith(lcase_name)
 
-        image_map = dict
-        ImageData = namedtuple('ImageData', 'name, ext, date, new_name, side_files')
+        self.side_files = [(f, f[len(self.name):]) for f in os.listdir(os.path.dirname(image_file)) if side_file(f)]
 
-        for image_file in find_images(target):
-            image_folder = os.path.dirname(image_file)
-            spl = os.path.splitext(image_file)
-            name = os.path.basename(spl[-2])
-            new_name = 'not-implemented-yet'
-            ext = spl[-1][1:]
-            date = extract_date(image_file)
-            side_files = [f for f in os.listdir(image_folder) if side_file(f)]
-            data = ImageData(name, ext, date, new_name, side_files)
-            print(data)
+    def get_new_image_filename(self):
+        return "".join([fn(self) for fn in self.name_segments] + ['.', self.ext])
+
+    def get_filename_transformations(self, dups):
+        new_name = "".join([fn(self) for fn in self.name_segments])
+        if dups > 0:
+            new_name += "-%i" % dups
+
+        ret = [(os.path.basename(self.file), new_name + "." + self.ext)]
+        for side_file, file_rest in self.side_files:
+            ret.append((side_file, new_name + file_rest))
+
+        return ret
+
+    def __str__(self):
+        for cazzo in dir(self):
+
+            if type(cazzo) != str:
+            # if str(cazzo) == 'get_filename_transformations':
+                print(type(cazzo))
+                # for fregna in dir(cazzo):
+                #     print(fregna)
+
+        return ", ".join(["{}={}".format(attr, getattr(self, attr)) for attr in dir(self)
+                          if not attr.startswith("__")
+                          and attr not in ['name_segments']
+                          and not attr.startswith('get_')
+                          ])
+
+
+def rename():
+    def name_segments_builder():
+        def _const(value):
+            return lambda _: value
+
+        # def _seq():
+        #     return lambda data: '' if data.name
+
+        _s = 0
+        segments = list()
+        tpl_vars = {
+            'datetime': lambda data: datetime.strftime(data.date, "%Y%m%dT%H%M%S")
+        }
+
+        for var_match in re.finditer("\{(.+?)\}", args.name_template):
+            tpl_var = var_match.group(1)
+            assert tpl_var in tpl_vars, "Var '%s' is not valid (valid ones: %s)" % (tpl_var, tpl_vars)
+            segments.append(_const(args.name_template[_s:var_match.start()]))
+            segments.append(tpl_vars[tpl_var])
+            _s = var_match.end()
+        segments.append(_const(args.name_template[_s:]))
+
+        return segments
+
+    name_segments = name_segments_builder()
+
+    def rename_in_folder(target):
+        print('Scanning %s/ ...' % target)
+
+        duplicates = dict()
+
+        images_info = sorted([ImageInfo(image_file, name_segments) for image_file in find_images(target)],
+                             key=lambda ii: ii.name)
+        for image_info in images_info:
+            print()
+            print(image_info)
+            new_name = image_info.get_new_image_filename()
+
+            dups = duplicates[new_name] if new_name in duplicates else 0
+
+            for old, new in image_info.get_filename_transformations(dups):
+                print("{orig:20s} -> {new:20s}".format(orig=old, new=new))
+                duplicates[new_name] = dups + 1
 
     # if recursive is better to run the function by each folder, without putting together images from different folders
     if args.recursive:
