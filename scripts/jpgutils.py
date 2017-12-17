@@ -9,39 +9,46 @@ from tempfile import mkdtemp
 def showcase():
     assert os.path.exists(args.target), "Target folder %s doesn't exist" % args.target
 
-    source_files = [os.path.join(r, f) for r, fd, fl in os.walk(os.path.abspath(args.target)) for f in fl
-                    if os.path.splitext(f)[1].lower() in ['.jpg']]
+    exts = ['.' + e for e in args.ext.split(",")]
+    # source_files = [os.path.join(r, f) for r, fd, fl in os.walk(os.path.abspath(args.target)) for f in fl
+    #                 if os.path.splitext(f)[1].lower() in exts]
 
     tmp = mkdtemp(prefix="showcase_")
     first = None
     c = 0
-    for file in sorted(source_files):
-        c += 1
-        link_name = "%04i_%s" % (c, os.path.basename(file))
-        if not first:
-            first = os.path.join(tmp, link_name)
-        os.symlink(file, os.path.join(tmp, link_name))
-        print("%s -> %s" % (file, os.path.join(tmp, link_name)))
+    for r, dirs, files in os.walk(os.path.abspath(args.target)):
+        dirs.sort()
+        for file in [os.path.join(r, f) for f in sorted(files) if os.path.splitext(f)[1].lower() in exts]:
+            c += 1
+            link_name = "%04i_%s" % (c, os.path.basename(file))
+            if not first:
+                first = os.path.join(tmp, link_name)
+            os.symlink(file, os.path.join(tmp, link_name))
+            print("%s -> %s" % (file, os.path.join(tmp, link_name)))
 
     subprocess.call(["xdg-open", first])
 
 
 def catalog():
-    assert os.path.exists(args.source), "Source folder doesn't exist"
+    source = os.path.expanduser(args.source)
+    target = os.path.expanduser(args.target)
+    assert os.path.exists(source), "Source folder doesn't exist"
 
-    if not os.path.exists(args.target):
-        os.makedirs(args.target, exist_ok=True)
+    if not os.path.exists(target):
+        os.makedirs(target, exist_ok=True)
 
     exts = ['.' + e for e in args.ext.split(",")]
 
-    for root, folders, files in os.walk(args.source):
+    for root, folders, files in os.walk(source):
+        print('scan %s...' % root)
         if os.path.basename(os.path.normpath(root))[0] == '.':
             continue
 
-        relative_root = root[len(args.source):]
+        relative_root = root[len(source):]
         for file in [f for f in files if os.path.splitext(f)[1].lower() in exts]:
+            print('file %s...' % file)
             source_picture = os.path.join(root, file)
-            target_picture = os.path.join(args.target, relative_root, file)
+            target_picture = os.path.join(target, relative_root, file)
 
             if not os.path.exists(target_picture):
                 print("Copying %s..." % os.path.join(relative_root, file), end='')
@@ -66,6 +73,9 @@ if __name__ == '__main__':
     showcase_parser = subparsers.add_parser("showcase", help="Symlink all pictures in folder and open viewer")
     showcase_parser.set_defaults(command="showcase")
     showcase_parser.add_argument("target", help="File or directory to view")
+    showcase_parser.add_argument("--ext", default="jpg,jpeg",
+                                 help="Extensions valid to be shown, separated by comma")
+    showcase_parser.add_argument("--permanent", help="Make showcase permanent")
 
     catalog_parser = subparsers.add_parser("catalog", help="Create catalog with smaller pictures")
     catalog_parser.set_defaults(command="catalog")
