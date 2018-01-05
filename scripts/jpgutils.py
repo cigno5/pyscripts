@@ -50,7 +50,12 @@ def catalog():
             source_picture = os.path.join(root, file)
             target_picture = os.path.join(target, relative_root, file)
 
-            if not os.path.exists(target_picture):
+            target_exists = os.path.exists(target_picture)
+
+            if not target_exists or args.force:
+                if target_exists:
+                    print('Replacing %s...' % target_picture)
+                    os.remove(target_picture)
                 print("Copying %s..." % os.path.join(relative_root, file), end='')
                 sys.stdout.flush()
                 os.makedirs(os.path.dirname(target_picture), exist_ok=True)
@@ -85,6 +90,7 @@ if __name__ == '__main__':
                                 help="Resize value of the pictures (default 1920x1080")
     catalog_parser.add_argument("--ext", default="jpg,jpeg",
                                 help="Extensions valid to be copied, separated by comma")
+    catalog_parser.add_argument("--force", action='store_true', help='Force resized file to be overridden')
 
     args = parser.parse_args()
     if args.command:
