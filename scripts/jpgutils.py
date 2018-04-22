@@ -30,6 +30,7 @@ def showcase():
 
 
 def permanent_showcase():
+    SHOWCASE_NAME = "__showcase"
     target = args.target
     counter = {}
 
@@ -38,30 +39,31 @@ def permanent_showcase():
             counter[_folder] = 0
 
         def _linker(item):
-            c = counter[_folder]
-            counter[_folder] += 1
+            if not args.skip_root or (_folder != target):
+                c = counter[_folder]
+                counter[_folder] += 1
 
-            showcase_folder = os.path.join(_folder, '__showcase')
-            os.makedirs(showcase_folder, exist_ok=True)
-            link_name = os.path.join(showcase_folder, "%04d_%s" % (c, os.path.basename(item)))
-            path_to_item = os.path.relpath(item, showcase_folder)
-            if not os.path.exists(link_name):
-                os.symlink(path_to_item, link_name)
+                showcase_folder = os.path.join(_folder, SHOWCASE_NAME)
+                os.makedirs(showcase_folder, exist_ok=True)
+                link_name = os.path.join(showcase_folder, "%04d_%s" % (c, os.path.basename(item)))
+                path_to_item = os.path.relpath(item, showcase_folder)
+                if not os.path.exists(link_name):
+                    os.symlink(path_to_item, link_name)
 
         return _linker
 
     def picture_list(folder, linkers):
 
-        if args.reset:
-            sc_folder = os.path.join(folder, '__showcase')
+        if args.rebuild or args.remove:
+            sc_folder = os.path.join(folder, SHOWCASE_NAME)
             if os.path.exists(sc_folder):
                 shutil.rmtree(sc_folder)
 
-        for entry in sorted([e for e in os.scandir(folder) if e.name != '__showcase'], key=lambda e: e.name):
+        for entry in sorted([e for e in os.scandir(folder) if e.name != SHOWCASE_NAME], key=lambda e: e.name):
             entry_path = os.path.join(folder, entry.name)
             if entry.is_dir():
                 picture_list(entry_path, linkers + [create_linker(folder)])
-            elif entry.is_file():
+            elif entry.is_file() and not args.remove:
                 for linker in linkers:
                     linker(entry_path)
 
@@ -135,7 +137,9 @@ if __name__ == '__main__':
     pshowcase_parser = subparsers.add_parser("permanent-showcase", help="Create permanent showcase")
     pshowcase_parser.set_defaults(command="permanent_showcase")
     pshowcase_parser.add_argument("target", help="Final destination of the catalog")
-    pshowcase_parser.add_argument("--reset", action="store_true", help="Delete all showcase folders")
+    pshowcase_parser.add_argument("--skip-root", action="store_true", help="Skip root showcase folder")
+    pshowcase_parser.add_argument("--rebuild", action="store_true", help="Delete all showcase folders and then create again")
+    pshowcase_parser.add_argument("--remove", action="store_true", help="Delete all showcase folders")
 
     args = parser.parse_args()
     if args.command:
