@@ -29,6 +29,45 @@ def showcase():
     subprocess.call(["xdg-open", first])
 
 
+def permanent_showcase():
+    target = args.target
+    counter = {}
+
+    def create_linker(_folder):
+        if _folder not in counter:
+            counter[_folder] = 0
+
+        def _linker(item):
+            c = counter[_folder]
+            counter[_folder] += 1
+
+            showcase_folder = os.path.join(_folder, '__showcase')
+            os.makedirs(showcase_folder, exist_ok=True)
+            link_name = os.path.join(showcase_folder, "%04d_%s" % (c, os.path.basename(item)))
+            path_to_item = os.path.relpath(item, showcase_folder)
+            if not os.path.exists(link_name):
+                os.symlink(path_to_item, link_name)
+
+        return _linker
+
+    def picture_list(folder, linkers):
+
+        if args.reset:
+            sc_folder = os.path.join(folder, '__showcase')
+            if os.path.exists(sc_folder):
+                shutil.rmtree(sc_folder)
+
+        for entry in sorted([e for e in os.scandir(folder) if e.name != '__showcase'], key=lambda e: e.name):
+            entry_path = os.path.join(folder, entry.name)
+            if entry.is_dir():
+                picture_list(entry_path, linkers + [create_linker(folder)])
+            elif entry.is_file():
+                for linker in linkers:
+                    linker(entry_path)
+
+    picture_list(target, [print])
+
+
 def catalog():
     source = os.path.expanduser(args.source)
     target = os.path.expanduser(args.target)
@@ -90,7 +129,13 @@ if __name__ == '__main__':
                                 help="Resize value of the pictures (default 1920x1080")
     catalog_parser.add_argument("--ext", default="jpg,jpeg",
                                 help="Extensions valid to be copied, separated by comma")
-    catalog_parser.add_argument("--force", action='store_true', help='Force resized file to be overridden')
+    catalog_parser.add_argument("--force", action='store_true',
+                                help='Force resized file to be overridden')
+
+    pshowcase_parser = subparsers.add_parser("permanent-showcase", help="Create permanent showcase")
+    pshowcase_parser.set_defaults(command="permanent_showcase")
+    pshowcase_parser.add_argument("target", help="Final destination of the catalog")
+    pshowcase_parser.add_argument("--reset", action="store_true", help="Delete all showcase folders")
 
     args = parser.parse_args()
     if args.command:
@@ -98,6 +143,8 @@ if __name__ == '__main__':
             showcase()
         elif args.command == 'catalog':
             catalog()
+        elif args.command == 'permanent_showcase':
+            permanent_showcase()
         else:
             parser.print_usage()
     else:
