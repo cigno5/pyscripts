@@ -37,8 +37,8 @@ class ImageInfo:
 
         tags = piexif.load(image_file)
         date_value = None
-        for sub_tags in tags.values():
-            for date_tag in DATE_TAGS:
+        for date_tag in DATE_TAGS:
+            for sub_tags in tags.values():
                 if date_tag in sub_tags:
                     date_value = sub_tags[date_tag].decode('utf8')
                     break
