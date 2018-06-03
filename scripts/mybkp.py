@@ -4,6 +4,7 @@ import configparser
 import getpass
 import os
 import shutil
+import sys
 import tempfile
 import logging
 import sh
@@ -86,13 +87,29 @@ def show():
 
 
 def backup():
+    for task_name in args.tasks:
+        if task_name not in config.sections():
+            print("Task '%s' is not present in configuration file" % task_name)
+            sys.exit(1)
+
+        if not Task(config[task_name]).enabled and not args.force:
+            print("Task '%s' is disabled" % task_name)
+            sys.exit(1)
+
+    def _eligible(t: Task):
+        return (t.enabled or args.force) \
+               and (len(args.tasks) == 0 or t.name in args.tasks)
+
+    tasks = list(_get_tasks(_eligible))
+
+    if len(tasks) == 0:
+        print("no tasks found ")
+        sys.exit(0)
+
     with Mount() as mount_point, tempfile.NamedTemporaryFile(suffix=".log", prefix="mybkp_", delete=False) as log_file:
         print("Mount point: %s\nLog file: %s" % (mount_point, log_file.name))
 
-        def _to_be_backup(t: Task):
-            return t.enabled and (len(args.tasks) == 0 or t.name in args.tasks)
-
-        for task in _get_tasks(_to_be_backup):
+        for task in tasks:
             log_file.write("""
 
 ==============================================
@@ -148,6 +165,7 @@ if __name__ == '__main__':
     backup_parser = sub_parser.add_parser("backup", help="Execute the backup of the tasks")
     backup_parser.set_defaults(command="backup")
     backup_parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything')
+    backup_parser.add_argument('-f', '--force', action='store_true', help='Force backup of disabled tasks')
     backup_parser.add_argument('tasks', nargs='*', help='Tasks to be backupped (or empty for all active tasks)')
 
     show_parser = sub_parser.add_parser("show", help="Show useful information")
