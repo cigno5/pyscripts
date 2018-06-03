@@ -11,8 +11,9 @@ config = configparser.ConfigParser()
 
 
 class Mount:
-    def __init__(self):
+    def __init__(self, keep_mounted=False):
         self.mount_point = tempfile.mkdtemp('.tmp', 'mybkp_')
+        self.keep_mounted = keep_mounted
         self.sudo_passwd = getpass.getpass("Please enter password: ")
 
     def __enter__(self):
@@ -30,13 +31,14 @@ class Mount:
         return self.mount_point.__str__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if os.path.ismount(self.mount_point.__str__()):
-            logging.info("Dismounting repository...")
-            with sh.contrib.sudo(password=self.sudo_passwd, _with=True):
-                sh.umount(self.mount_point.__str__())
-            logging.info("...dismounted")
+        if not self.keep_mounted:
+            if os.path.ismount(self.mount_point.__str__()):
+                logging.info("Dismounting repository...")
+                with sh.contrib.sudo(password=self.sudo_passwd, _with=True):
+                    sh.umount(self.mount_point.__str__())
+                logging.info("...dismounted")
 
-        shutil.rmtree(self.mount_point)
+            shutil.rmtree(self.mount_point)
 
 
 class Task:
@@ -70,7 +72,8 @@ class Task:
 
     def get_contents(self, mount_point):
         for sub_folder in self.sub_folders:
-            yield (os.path.join(self.local_root, sub_folder), os.path.join(mount_point, self.remote_root, sub_folder))
+            destination = sub_folder[1:] if sub_folder[0] == '.' else sub_folder
+            yield (os.path.join(self.local_root, sub_folder), os.path.join(mount_point, self.remote_root, destination))
 
 
 def show():
@@ -96,11 +99,14 @@ Task.........: {task}
 Local root...: {local}
 Remote root..: {remote}
 Delete.......: {delete}
+DRY RUN......: {dryrun}
 ==============================================\n"""
                            .format(task=task.name,
                                    local=task.local_root,
                                    remote=task.remote_root,
-                                   delete="yes" if task.delete_missing else "no")
+                                   delete="yes" if task.delete_missing else "no",
+                                   dryrun="yes" if args.dry_run else "no",
+                                   )
                            .encode())
 
             params = task.build_parameters(["-avzhi"])
@@ -120,6 +126,11 @@ Delete.......: {delete}
         sh.less(log_file.name, _fg=True)
 
 
+def mount():
+    with Mount(keep_mounted=True) as mount_point:
+        print("Remote source mounted at %s ..." % mount_point)
+
+
 def _get_tasks(task_filter=None):
     for task in (Task(config[s]) for s in config.sections() if s != 'source'):
         if not task_filter or task_filter(task):
@@ -130,17 +141,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-c', '--config', default=os.path.expanduser("~/mybkp.ini"), help='Configuration ini file')
-    parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything')
     parser.add_argument('--verbose', action='store_true')
 
     sub_parser = parser.add_subparsers()
     backup_parser = sub_parser.add_parser("backup", help="Execute the backup of the tasks")
     backup_parser.set_defaults(command="backup")
+    backup_parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything')
     backup_parser.add_argument('tasks', nargs='*', help='Tasks to be backupped (or empty for all active tasks)')
 
     show_parser = sub_parser.add_parser("show", help="Show useful information")
     show_parser.set_defaults(command="show")
     show_parser.add_argument("subject", help="Subject of the request", choices=['tasks'])
+
+    mount_parser = sub_parser.add_parser("mount", help="Mount remote repository")
+    mount_parser.set_defaults(command="mount")
+    # mount_parser.add_argument("subject", help="Subject of the request", choices=['tasks'])
 
     args = parser.parse_args()
 
