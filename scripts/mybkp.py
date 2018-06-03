@@ -1,4 +1,5 @@
 import argparse
+import collections
 import configparser
 import getpass
 import os
@@ -7,7 +8,7 @@ import tempfile
 import logging
 import sh
 
-config = configparser.ConfigParser()
+config = configparser.ConfigParser(dict_type=collections.OrderedDict)
 
 
 class Mount:
@@ -72,7 +73,7 @@ class Task:
 
     def get_contents(self, mount_point):
         for sub_folder in self.sub_folders:
-            destination = sub_folder[1:] if sub_folder[0] == '.' else sub_folder
+            destination = sub_folder[1:] if len(sub_folder) > 0 and sub_folder[0] == '.' else sub_folder
             yield (os.path.join(self.local_root, sub_folder), os.path.join(mount_point, self.remote_root, destination))
 
 
