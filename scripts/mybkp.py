@@ -89,10 +89,32 @@ def backup():
             return t.enabled and (len(args.tasks) == 0 or t.name in args.tasks)
 
         for task in _get_tasks(_to_be_backup):
+            log_file.write("""
+
+==============================================
+Task.........: {task}
+Local root...: {local}
+Remote root..: {remote}
+Delete.......: {delete}
+==============================================\n"""
+                           .format(task=task.name,
+                                   local=task.local_root,
+                                   remote=task.remote_root,
+                                   delete="yes" if task.delete_missing else "no")
+                           .encode())
+
             params = task.build_parameters(["-avzhi"])
 
             for source, destination in task.get_contents(mount_point):
-                print(" ".join(['rsync'] + params + [source, destination]))
+                sync_text = "syncing {} -> {} ...".format(source, destination[len(mount_point):])
+                print(sync_text)
+
+                if args.verbose:
+                    print(" ".join(['rsync'] + params + [source, destination]))
+
+                log_file.write("\n>> ".encode())
+                log_file.write(sync_text.encode())
+                log_file.write("\n".encode())
                 sh.rsync(*params, source, destination, _out=log_file)
 
         sh.less(log_file.name, _fg=True)
@@ -108,7 +130,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-c', '--config', default=os.path.expanduser("~/mybkp.ini"), help='Configuration ini file')
-    parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything', default=True)
+    parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything')
     parser.add_argument('--verbose', action='store_true')
 
     sub_parser = parser.add_subparsers()
