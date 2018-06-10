@@ -16,19 +16,12 @@ class Mount:
     def __init__(self, keep_mounted=False):
         self.mount_point = tempfile.mkdtemp('.tmp', 'mybkp_')
         self.keep_mounted = keep_mounted
-        self.sudo_passwd = getpass.getpass("Please enter password: ")
+        self.sudo_passwd = getpass.getpass("Please enter SUDO password: ")
 
     def __enter__(self):
-        source_settings = config['source']
         logging.debug("Mounting repository...")
         with sh.contrib.sudo(password=self.sudo_passwd, _with=True):
-            sh.mount("-t", "cifs",
-                     "//%s%s" % (source_settings.get('server'), source_settings.get('base_folder')),
-                     self.mount_point.__str__(),
-                     '-o', 'uid=%d' % os.getuid(),
-                     '-o', 'gid=%d' % os.getgid(),
-                     '-o', 'username=%s,noexec' % source_settings.get('user'),
-                     '-o', 'password=%s' % source_settings.get('password'))
+            sh.mount(*self.__mount_parameters())
         logging.debug("...mounted")
         return self.mount_point.__str__()
 
@@ -41,6 +34,24 @@ class Mount:
                 logging.info("...dismounted")
 
             shutil.rmtree(self.mount_point)
+
+    def __mount_parameters(self):
+        source_settings = config['source']
+        if _is_cifs_mount():
+            return ["-t", "cifs",
+                    "//%s%s" % (source_settings.get('server'), source_settings.get('base_folder')),
+                    self.mount_point.__str__(),
+                    '-o', 'uid=%d' % os.getuid(),
+                    '-o', 'gid=%d' % os.getgid(),
+                    '-o', 'username=%s,noexec' % source_settings.get('user'),
+                    '-o', 'password=%s' % source_settings.get('password')]
+        elif _is_nfs_mount():
+            return ["-t", "nfs",
+                    "%s:%s" % (source_settings.get('server'), source_settings.get('base_folder')),
+                    self.mount_point.__str__()
+                    ]
+        else:
+            raise ValueError("Mount type '%s' not valid" % source_settings['mount_type'])
 
 
 class Task:
@@ -127,7 +138,7 @@ DRY RUN......: {dryrun}
                                    )
                            .encode())
 
-            params = task.build_parameters(["-avzhi"])
+            params = task.build_parameters(["-vzhirltoD"] if _is_cifs_mount() else ["-avzhi"])
 
             for source, destination in task.get_contents(mount_point):
                 sync_text = "syncing {} -> {} ...".format(source, destination[len(mount_point):])
@@ -141,7 +152,7 @@ DRY RUN......: {dryrun}
                 log_file.write("\n".encode())
                 sh.rsync(*params, source, destination, _out=log_file)
 
-        sh.less(log_file.name, _fg=True)
+    sh.less(log_file.name, _fg=True)
 
 
 def mount():
@@ -153,6 +164,14 @@ def _get_tasks(task_filter=None):
     for task in (Task(config[s]) for s in config.sections() if s != 'source'):
         if not task_filter or task_filter(task):
             yield task
+
+
+def _is_nfs_mount():
+    return config['source']['mount_type'].lower() == 'nfs'
+
+
+def _is_cifs_mount():
+    return config['source']['mount_type'].lower() == 'cifs'
 
 
 if __name__ == '__main__':
