@@ -10,6 +10,8 @@ import logging
 import sh
 
 config = configparser.ConfigParser(dict_type=collections.OrderedDict)
+all_tasks = []
+all_names = set()
 
 
 class Mount:
@@ -70,6 +72,11 @@ class Task:
         self.delete_missing = task_conf.getboolean('delete_missing', True)
         self.enabled = task_conf.getboolean('enabled', True)
         self.exclude = [excl for excl in task_conf.get('exclude', '').split('\n') if excl and excl != '']
+        _tags = task_conf.get('tags', None)
+        if _tags:
+            self.tags = [t.lower().strip() for t in _tags.split(',') if t.strip() != '']
+        else:
+            self.tags = None
 
     def build_parameters(self, params):
         if args.dry_run:
@@ -95,46 +102,63 @@ def show():
         [print("  " + s.name) for s in _get_tasks(lambda t: t.enabled)]
         print("\nDisabled tasks:")
         [print("  " + s.name) for s in _get_tasks(lambda t: not t.enabled)]
+    elif args.subject == 'tags':
+        tags = {}
+        for task in (t for t in _get_tasks() if t.tags):
+            for tag in task.tags:
+                if tag in tags:
+                    tags[tag].append(task)
+                else:
+                    tags[tag] = [task]
+
+        if tags:
+            for tag, tasks in tags.items():
+                print("Tag '%s'" % tag)
+                for task in tasks:
+                    print("  %s" % task.name)
+        else:
+            print("No tags defined")
 
 
 def backup():
     for task_name in args.tasks:
-        if task_name not in config.sections():
-            print("Task '%s' is not present in configuration file" % task_name)
+        if task_name not in all_names:
+            print("'%s' is not either a valid task or valid tag" % task_name)
             sys.exit(1)
 
-        if not Task(config[task_name]).enabled and not args.force:
-            print("Task '%s' is disabled" % task_name)
-            sys.exit(1)
+    def eligible(t: Task):
+        enabled = t.enabled or args.force
+        no_task_specified = len(args.tasks) == 0
+        is_specified_task = t.name in args.tasks
+        is_tagged_task = t.tags and [t for t in t.tags if t in args.tasks]
+        return enabled and (no_task_specified or is_specified_task or is_tagged_task)
 
-    def _eligible(t: Task):
-        return (t.enabled or args.force) \
-               and (len(args.tasks) == 0 or t.name in args.tasks)
-
-    tasks = list(_get_tasks(_eligible))
+    tasks = list(_get_tasks(eligible))
 
     if len(tasks) == 0:
-        print("no tasks found ")
+        print("No tasks found")
         sys.exit(0)
 
     with Mount() as mount_point, tempfile.NamedTemporaryFile(suffix=".log", prefix="mybkp_", delete=False) as log_file:
         print("Mount point: %s\nLog file: %s" % (mount_point, log_file.name))
 
-        for task in tasks:
-            log_file.write("""
+        log_file.write("""
+============================================================
+Command line tasks/tags : {cl_tasks}
+Selected tasks          : {tasks}
+============================================================
 
-==============================================
-Task.........: {task}
-Local root...: {local}
-Remote root..: {remote}
-Delete.......: {delete}
-DRY RUN......: {dryrun}
-==============================================\n"""
+"""
+                       .format(cl_tasks=args.tasks if args.tasks else "*all",
+                               tasks=", ".join([t.name for t in tasks]))
+                       .encode())
+
+        for task in tasks:
+            log_file.write("-------------------------- {task}: {local} -> {remote} {delete} --------------------------"
                            .format(task=task.name,
                                    local=task.local_root,
                                    remote=task.remote_root,
-                                   delete="yes" if task.delete_missing else "no",
-                                   dryrun="yes" if args.dry_run else "no",
+                                   delete="(with delete)" if task.delete_missing else "",
                                    )
                            .encode())
 
@@ -161,7 +185,7 @@ def mount():
 
 
 def _get_tasks(task_filter=None):
-    for task in (Task(config[s]) for s in config.sections() if s != 'source'):
+    for task in all_tasks:
         if not task_filter or task_filter(task):
             yield task
 
@@ -172,6 +196,19 @@ def _is_nfs_mount():
 
 def _is_cifs_mount():
     return config['source']['mount_type'].lower() == 'cifs'
+
+
+def __check_and_create_tasks():
+    _tasks = [Task(config[s]) for s in config.sections() if s != 'source']
+    names = {t.name for t in _tasks}
+    all_names.update(names)
+
+    for _task in [t for t in _tasks if t.tags]:
+        for tag in _task.tags:
+            assert tag not in names, "Tag name '%s' conflicts with task name" % tag
+        all_names.update(_task.tags)
+
+    return _tasks
 
 
 if __name__ == '__main__':
@@ -189,7 +226,7 @@ if __name__ == '__main__':
 
     show_parser = sub_parser.add_parser("show", help="Show useful information")
     show_parser.set_defaults(command="show")
-    show_parser.add_argument("subject", help="Subject of the request", choices=['tasks'])
+    show_parser.add_argument("subject", help="Subject of the request", choices=['tasks', 'tags'])
 
     mount_parser = sub_parser.add_parser("mount", help="Mount remote repository")
     mount_parser.set_defaults(command="mount")
@@ -207,6 +244,9 @@ if __name__ == '__main__':
     if hasattr(args, 'command'):
         assert os.path.exists(args.config), "Configuration file not found"
         config.read(args.config)
+
+        # initialize tasks
+        all_tasks = __check_and_create_tasks()
 
         eval("%s()" % args.command)
     else:
