@@ -13,16 +13,17 @@ config = configparser.ConfigParser(dict_type=collections.OrderedDict)
 all_tasks = []
 all_names = set()
 
+__sudo_passwd = None
+
 
 class Mount:
     def __init__(self, keep_mounted=False):
         self.mount_point = tempfile.mkdtemp('.tmp', 'mybkp_')
         self.keep_mounted = keep_mounted
-        self.sudo_passwd = getpass.getpass("Please enter SUDO password: ")
 
     def __enter__(self):
         logging.debug("Mounting repository...")
-        with sh.contrib.sudo(password=self.sudo_passwd, _with=True):
+        with _sudo():
             sh.mount(*self.__mount_parameters())
         logging.debug("...mounted")
         return self.mount_point.__str__()
@@ -31,7 +32,7 @@ class Mount:
         if not self.keep_mounted:
             if os.path.ismount(self.mount_point.__str__()):
                 logging.info("Dismounting repository...")
-                with sh.contrib.sudo(password=self.sudo_passwd, _with=True):
+                with _sudo():
                     sh.umount(self.mount_point.__str__())
                 logging.info("...dismounted")
 
@@ -182,6 +183,14 @@ Selected tasks          : {tasks}
 def mount():
     with Mount(keep_mounted=True) as mount_point:
         print("Remote source mounted at %s ..." % mount_point)
+
+
+def _sudo():
+    global __sudo_passwd
+    if __sudo_passwd is None:
+        __sudo_passwd = getpass.getpass("Please enter SUDO password: ")
+
+    return sh.contrib.sudo(password=__sudo_passwd, _with=True)
 
 
 def _get_tasks(task_filter=None):
