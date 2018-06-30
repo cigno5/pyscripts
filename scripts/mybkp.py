@@ -9,6 +9,8 @@ import tempfile
 import logging
 import sh
 
+import _common
+
 config = configparser.ConfigParser(dict_type=collections.OrderedDict)
 all_tasks = []
 all_names = set()
@@ -223,7 +225,9 @@ def __check_and_create_tasks():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-c', '--config', default=os.path.expanduser("~/mybkp.ini"), help='Configuration ini file')
+    parser.add_argument('-c', '--config', help='Configuration ini file. '
+                                               "If not specified a file 'mybkp.ini' will be searched in $HOME, "
+                                               "$HOME/.config/ or $PYSCRIPTS_CONFIG environment variables")
     parser.add_argument('--verbose', action='store_true')
 
     sub_parser = parser.add_subparsers()
@@ -251,8 +255,7 @@ if __name__ == '__main__':
         logging.getLogger("sh").setLevel(logging.INFO)
 
     if hasattr(args, 'command'):
-        assert os.path.exists(args.config), "Configuration file not found"
-        config.read(args.config)
+        _common.load_configuration(args.config if args.config else 'mybkp.ini', parser=config)
 
         # initialize tasks
         all_tasks = __check_and_create_tasks()

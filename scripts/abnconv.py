@@ -1,7 +1,6 @@
 from __future__ import absolute_import, print_function
 
 import argparse
-import configparser
 import datetime
 import os
 import re
@@ -9,6 +8,8 @@ import shutil
 import tempfile
 import xml.etree.ElementTree
 import zipfile
+
+import _common
 
 ns = {'xmlns': "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"}
 
@@ -212,15 +213,11 @@ class QIFOutput:
         return self.accounts[account]
 
 
-def _load_accounts(configuration_file):
+def _load_accounts(conf_parser):
     _accounts = {}
-    if configuration_file and os.path.exists(configuration_file):
-        conf_parser = configparser.ConfigParser()
-        conf_parser.read(configuration_file)
-
-        for account_conf in [conf_parser[section] for section in conf_parser.sections()]:
-            _acc_iban = account_conf['iban']
-            _accounts[_acc_iban] = account_conf['name'] if 'name' in account_conf else _acc_iban
+    for account_conf in [conf_parser[section] for section in conf_parser.sections()]:
+        _acc_iban = account_conf['iban']
+        _accounts[_acc_iban] = account_conf['name'] if 'name' in account_conf else _acc_iban
 
     return _accounts
 
@@ -229,11 +226,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("source", nargs="+", help="ABN AMRO CAMT export file")
     parser.add_argument("--output", help="QIF output file")
-    parser.add_argument('-c', "--config", help="The accounts configuration file")
+    parser.add_argument('-c', "--config", help="The accounts configuration file. "
+                                               "If not specified a file 'abnconv.ini' will be searched in $HOME, "
+                                               "$HOME/.config/ or $PYSCRIPTS_CONFIG environment variables")
 
     args = parser.parse_args()
 
-    accounts = _load_accounts(os.path.expanduser(args.config))
+    try:
+        accounts = _load_accounts(_common.load_configuration(args.config if args.config else 'abnconv.ini'))
+    except _common.ConfigFileError:
+        accounts = {}
 
     out_path = args.output if args.output else args.source[0] + '.qif'
 
