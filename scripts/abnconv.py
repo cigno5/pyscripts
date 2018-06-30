@@ -1,12 +1,13 @@
 from __future__ import absolute_import, print_function
 
 import argparse
+import configparser
 import datetime
 import os
 import re
 import shutil
 import tempfile
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree
 import zipfile
 
 ns = {'xmlns': "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"}
@@ -34,23 +35,19 @@ M{memo}
 L{ledger}
 ^"""
 
-qif_tpl_saving_tsx = "!Type:Bank\n" + qif_tpl_plain_tsx
-
-qif_tpl_oth_tsx = "!Type:Oth A\n" + qif_tpl_plain_tsx
-
 
 class Trsx:
-    def __init__(self, account):
-        self.account = account
+    def __init__(self, account_iban):
+        self.source_iban = account_iban
+        self.dest_iban = None
         self.type = None
         self.date = None
         self.amount = None
         self.payee = None
         self.memo = None
-        self.iban = None
 
-    def is_saving_transaction(self):
-        return self.iban == args.savings_iban
+    def is_transfer_transaction(self):
+        return self.dest_iban in accounts
 
     def get_qif_tx(self, inverse=False):
         def nn(v):
@@ -65,21 +62,26 @@ class Trsx:
             'ledger': '',
         }
 
-        if self.is_saving_transaction():
+        if self.is_transfer_transaction():
             var['type'] = 'Oth A'
-            var['ledger'] = '[%s]' % args.savings_iban
-            if self.memo is None:
-                var['memo'] = 'saving' if self.amount < 0 else 'withdrawal'
 
-        if inverse:
-            var['type'] = 'Oth A'
-            var['amount'] *= -1
-            var['ledger'] = '[%s]' % self.account
+            if self.memo is None:
+                var['memo'] = 'Transfer'
+
+            if inverse:
+                var['amount'] *= -1
+                var['ledger'] = '[%s]' % _get_account(self.source_iban)
+            else:
+                var['ledger'] = '[%s]' % _get_account(self.dest_iban)
 
         return qif_tpl_plain_tsx.format(**var)
 
 
-def process_entry(account, elem):
+def _get_account(iban):
+    return accounts[iban]
+
+
+def process_entry(account_iban, elem):
     def find_sepa_field(field):
         if SEPA_re.search(transaction_info):
             start = None
@@ -99,7 +101,7 @@ def process_entry(account, elem):
 
         return None, None
 
-    trsx = Trsx(account)
+    trsx = Trsx(account_iban)
 
     trsx.date = datetime.datetime.strptime(elem.find("xmlns:ValDt/xmlns:Dt", namespaces=ns).text, "%Y-%m-%d")
     trsx.amount = float(elem.find("xmlns:Amt", namespaces=ns).text)
@@ -119,7 +121,7 @@ def process_entry(account, elem):
         trsx.type = 'Bank'
         trsx.payee = find_sepa_field('NAME')
         trsx.memo = find_sepa_field("REMI")
-        trsx.iban = find_sepa_field('IBAN')
+        trsx.dest_iban = find_sepa_field('IBAN')
 
     elif tx_type == 'abn':
         trsx.type = 'Bank'
@@ -141,16 +143,16 @@ def _qif_account(account_name, account_type):
     return qif_account_tpl.format(name=account_name, type=account_type)
 
 
-def _trsxs(file):
+def _trsx_list(file):
     def n(name):
         return "{urn:iso:std:iso:20022:tech:xsd:camt.053.001.02}" + name
 
     if file[-3:] == 'xml':
-        tree = ET.parse(file)
+        tree = xml.etree.ElementTree.parse(file)
 
-        account = tree.find('xmlns:BkToCstmrStmt/xmlns:Stmt/xmlns:Acct/xmlns:Id/xmlns:IBAN', namespaces=ns).text
+        account_iban = tree.find('xmlns:BkToCstmrStmt/xmlns:Stmt/xmlns:Acct/xmlns:Id/xmlns:IBAN', namespaces=ns).text
         for elem in tree.iter(tag=n("Ntry")):
-            trsx = process_entry(account, elem)
+            trsx = process_entry(account_iban, elem)
             if trsx:
                 yield trsx
     else:
@@ -190,36 +192,52 @@ class QIFOutput:
         self.output_file.close()
 
     def __iadd__(self, trsx: Trsx):
-        account = trsx.account
-        tsx_entries = self._get_list(account)
+        src_iban = trsx.source_iban
+        tsx_entries = self._get_list(src_iban)
 
         tsx_entries.append(trsx.get_qif_tx())
 
-        if trsx.is_saving_transaction():
-            # for saving transactions a double entry has to be written to the output
-            sav_entries = self._get_list(args.savings_iban, is_saving=True)
-            sav_entries.append(trsx.get_qif_tx(inverse=True))
+        if trsx.is_transfer_transaction():
+            # for transfer transactions a double entry has to be written to the output
+            self._get_list(trsx.dest_iban).append(trsx.get_qif_tx(inverse=True))
 
         return self
 
-    def _get_list(self, account, is_saving=False):
+    def _get_list(self, account):
         if account not in self.accounts:
             self.accounts[account] = list()
-            self.accounts[account].append(qif_account_tpl.format(name=account,
-                                                                 type="Oth A" if is_saving else "Bank"))
+            self.accounts[account].append(qif_account_tpl.format(name=_get_account(account),
+                                                                 type='Bank'))
+                                                                 # type="Oth A" if is_saving else "Bank"))
         return self.accounts[account]
+
+
+def _load_accounts(configuration_file):
+    _accounts = {}
+    if configuration_file and os.path.exists(configuration_file):
+        conf_parser = configparser.ConfigParser()
+        conf_parser.read(configuration_file)
+
+        for account_conf in [conf_parser[section] for section in conf_parser.sections()]:
+            _acc_iban = account_conf['iban']
+            _accounts[_acc_iban] = account_conf['name'] if 'name' in account_conf else _acc_iban
+
+    return _accounts
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("source", nargs="+", help="ABN AMRO CAMT export file")
-    parser.add_argument("output", help="Output qif file")
-    parser.add_argument('-s', "--savings-iban", help="The Savings IBAN to create internal transaction", default=None)
+    parser.add_argument("--output", help="QIF output file")
+    parser.add_argument('-c', "--config", help="The accounts configuration file")
 
     args = parser.parse_args()
 
-    entries = (e for f in _all_files() for e in _trsxs(f))
+    accounts = _load_accounts(os.path.expanduser(args.config))
 
-    with QIFOutput(args.output) as out:
-        for e in entries:
-            out += e
+    out_path = args.output if args.output else args.source[0] + '.qif'
+
+    with QIFOutput(out_path) as out:
+        for source_file in _all_files():
+            for trsx in _trsx_list(source_file):
+                out += trsx
