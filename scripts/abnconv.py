@@ -62,8 +62,14 @@ class Trsx:
             'amount': self.amount,
             'payee': nn(self.payee),
             'memo': nn(self.memo),
-            'ledger': '[%s]' % args.savings_iban if self.is_saving_transaction() else '',
+            'ledger': '',
         }
+
+        if self.is_saving_transaction():
+            var['type'] = 'Oth A'
+            var['ledger'] = '[%s]' % args.savings_iban
+            if self.memo is None:
+                var['memo'] = 'saving' if self.amount < 0 else 'withdrawal'
 
         if inverse:
             var['type'] = 'Oth A'
