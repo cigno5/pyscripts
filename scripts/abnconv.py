@@ -50,6 +50,36 @@ class Trsx:
     def is_saving_transaction(self):
         return self.iban == args.savings_iban
 
+    def get_qif_tx(self):
+        def nn(v):
+            return v if v else ''
+
+        if self.is_saving_transaction():
+            return qif_tpl_saving_tsx.format(date=self.date.strftime("%Y/%m/%d"),
+                                             amount=self.amount,
+                                             payee=nn(self.payee),
+                                             memo=nn(self.memo),
+                                             ledger='[%s]' % args.savings_iban)
+        else:
+            return qif_tpl_plain_tsx.format(date=self.date.strftime("%Y/%m/%d"),
+                                            amount=self.amount,
+                                            payee=nn(self.payee),
+                                            memo=nn(self.memo),
+                                            ledger='')
+
+    def get_qif_tx_inverse(self):
+        def nn(v):
+            return v if v else ''
+
+        if self.is_saving_transaction():
+            return qif_tpl_oth_tsx.format(date=self.date.strftime("%Y/%m/%d"),
+                                          amount=self.amount * -1,
+                                          payee=nn(self.payee),
+                                          memo=nn(self.memo),
+                                          ledger='[%s]' % self.account)
+        else:
+            raise ValueError('No inverse transaction for nominal transaction')
+
 
 def process_entry(account, elem):
     def find_sepa_field(field):
@@ -161,26 +191,12 @@ class QIFOutput:
         account = trsx.account
         tsx_entries = self._get_list(account)
 
+        tsx_entries.append(trsx.get_qif_tx())
+
         if trsx.is_saving_transaction():
             # for saving transactions a double entry has to be written to the output
-            tsx_entries.append(qif_tpl_saving_tsx.format(date=trsx.date.strftime("%Y/%m/%d"),
-                                                         amount=trsx.amount,
-                                                         payee=trsx.payee,
-                                                         memo=trsx.memo,
-                                                         ledger='[%s]' % args.savings_iban))
-
             sav_entries = self._get_list(args.savings_iban, is_saving=True)
-            sav_entries.append(qif_tpl_oth_tsx.format(date=trsx.date.strftime("%Y/%m/%d"),
-                                                      amount=trsx.amount * -1,
-                                                      payee=trsx.payee,
-                                                      memo=trsx.memo,
-                                                      ledger='[%s]' % account))
-        else:
-            tsx_entries.append(qif_tpl_plain_tsx.format(date=trsx.date.strftime("%Y/%m/%d"),
-                                                        amount=trsx.amount,
-                                                        payee=trsx.payee,
-                                                        memo=trsx.memo,
-                                                        ledger=''))
+            sav_entries.append(trsx.get_qif_tx_inverse())
 
         return self
 
