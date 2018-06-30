@@ -11,7 +11,7 @@ import zipfile
 
 ns = {'xmlns': "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"}
 
-BEA_re = re.compile("[GB]EA.+(\d{2}.){4}\d{2}(?P<payee>.+),PAS(\d+)")
+BEA_re = re.compile("(?P<subtype>[GB])EA.+(\d{2}.){4}\d{2}(?P<payee>.+),PAS(\d+)")
 
 SEPA_re = re.compile("/TRTP/.+")
 SEPA_markers_re = re.compile("/(TRTP|CSID|NAME|MARF|REMI|IBAN|BIC|EREF)/")
@@ -25,7 +25,8 @@ N{name}
 T{type}
 ^"""
 
-qif_tpl_plain_tsx = """D{date}
+qif_tpl_plain_tsx = """!Type:{type}
+D{date}
 T{amount}
 C
 P{payee}
@@ -41,6 +42,7 @@ qif_tpl_oth_tsx = "!Type:Oth A\n" + qif_tpl_plain_tsx
 class Trsx:
     def __init__(self, account):
         self.account = account
+        self.type = None
         self.date = None
         self.amount = None
         self.payee = None
@@ -50,35 +52,25 @@ class Trsx:
     def is_saving_transaction(self):
         return self.iban == args.savings_iban
 
-    def get_qif_tx(self):
+    def get_qif_tx(self, inverse=False):
         def nn(v):
             return v if v else ''
 
-        if self.is_saving_transaction():
-            return qif_tpl_saving_tsx.format(date=self.date.strftime("%Y/%m/%d"),
-                                             amount=self.amount,
-                                             payee=nn(self.payee),
-                                             memo=nn(self.memo),
-                                             ledger='[%s]' % args.savings_iban)
-        else:
-            return qif_tpl_plain_tsx.format(date=self.date.strftime("%Y/%m/%d"),
-                                            amount=self.amount,
-                                            payee=nn(self.payee),
-                                            memo=nn(self.memo),
-                                            ledger='')
+        var = {
+            'type': self.type,
+            'date': self.date.strftime("%Y/%m/%d"),
+            'amount': self.amount,
+            'payee': nn(self.payee),
+            'memo': nn(self.memo),
+            'ledger': '[%s]' % args.savings_iban if self.is_saving_transaction() else '',
+        }
 
-    def get_qif_tx_inverse(self):
-        def nn(v):
-            return v if v else ''
+        if inverse:
+            var['type'] = 'Oth A'
+            var['amount'] *= -1
+            var['ledger'] = '[%s]' % self.account
 
-        if self.is_saving_transaction():
-            return qif_tpl_oth_tsx.format(date=self.date.strftime("%Y/%m/%d"),
-                                          amount=self.amount * -1,
-                                          payee=nn(self.payee),
-                                          memo=nn(self.memo),
-                                          ledger='[%s]' % self.account)
-        else:
-            raise ValueError('No inverse transaction for nominal transaction')
+        return qif_tpl_plain_tsx.format(**var)
 
 
 def process_entry(account, elem):
@@ -113,19 +105,23 @@ def process_entry(account, elem):
     tx_type, match = _get_regex()
 
     if tx_type == 'bea':
+        trsx.type = 'Bank' if match.group("subtype") == 'B' else 'Cash'
         trsx.payee = match.group("payee")
         trsx.memo = transaction_info
 
     elif tx_type == 'sepa':
+        trsx.type = 'Bank'
         trsx.payee = find_sepa_field('NAME')
         trsx.memo = find_sepa_field("REMI")
         trsx.iban = find_sepa_field('IBAN')
 
     elif tx_type == 'abn':
+        trsx.type = 'Bank'
         trsx.payee = match.group("payee")
         trsx.memo = match.group("memo")
 
     elif tx_type == 'sparen':
+        trsx.type = 'Bank'
         trsx.payee = "ABN AMRO Bank N.V."
         trsx.memo = match.group("memo")
 
@@ -196,7 +192,7 @@ class QIFOutput:
         if trsx.is_saving_transaction():
             # for saving transactions a double entry has to be written to the output
             sav_entries = self._get_list(args.savings_iban, is_saving=True)
-            sav_entries.append(trsx.get_qif_tx_inverse())
+            sav_entries.append(trsx.get_qif_tx(inverse=True))
 
         return self
 
