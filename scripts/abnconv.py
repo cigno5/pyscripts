@@ -238,8 +238,12 @@ if __name__ == '__main__':
         accounts = {}
 
     out_path = args.output if args.output else args.source[0] + '.qif'
+    c = 0
 
     with QIFOutput(out_path) as out:
         for source_file in _all_files():
             for trsx in _trsx_list(source_file):
+                c += 1
                 out += trsx
+
+    print('Processed %d transactions' % c)
