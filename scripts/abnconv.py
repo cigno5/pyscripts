@@ -18,6 +18,8 @@ SEPA_markers_re = re.compile("/(TRTP|CSID|NAME|MARF|REMI|IBAN|BIC|EREF)/")
 
 ABN_re = re.compile("(?P<payee>ABN AMRO Bank N.V.)\s+(?P<memo>\w+).+")
 
+SPAREN_re = re.compile("ACCOUNT BALANCED\s+(?P<memo>CREDIT INTEREST.+)For interest rates")
+
 qif_account_tpl = """!Account
 N{name}
 T{type}
@@ -62,7 +64,7 @@ def process_entry(account, elem):
         return None
 
     def _get_regex():
-        for _type, regexp in {'bea': BEA_re, 'sepa': SEPA_re, 'abn': ABN_re}.items():
+        for _type, regexp in {'bea': BEA_re, 'sepa': SEPA_re, 'abn': ABN_re, 'sparen': SPAREN_re}.items():
             _match = regexp.search(transaction_info)
             if _match:
                 return _type, _match
@@ -83,6 +85,7 @@ def process_entry(account, elem):
     if tx_type == 'bea':
         trsx.payee = match.group("payee")
         trsx.memo = transaction_info
+
     elif tx_type == 'sepa':
         trsx.payee = find_sepa_field('NAME')
         trsx.memo = find_sepa_field("REMI")
@@ -91,6 +94,11 @@ def process_entry(account, elem):
     elif tx_type == 'abn':
         trsx.payee = match.group("payee")
         trsx.memo = match.group("memo")
+
+    elif tx_type == 'sparen':
+        trsx.payee = "ABN AMRO Bank N.V."
+        trsx.memo = match.group("memo")
+
     else:
         raise ValueError('Transaction type not supported for "%s"' % transaction_info)
 
