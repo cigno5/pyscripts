@@ -48,6 +48,35 @@ class Trsx:
         self.memo = None
         self.transaction_desc = None
 
+    def __eq__(self, other):
+        if type(other) == Trsx:
+            return self.source_iban == other.source_iban \
+                   and self.dest_iban == other.dest_iban \
+                   and self.type == other.type \
+                   and self.date == other.date \
+                   and self.amount == other.amount \
+                   and self.payee == other.payee \
+                   and self.memo == other.memo \
+                   # and self.transaction_desc == other.transaction_desc
+        else:
+            return False
+
+    def __hash__(self):
+        return hash("%s-%s-%s-%s/%s" %
+                    (self.source_iban,
+                     self.dest_iban,
+                     self.date.strftime("%Y%m%d"),
+                     str(self.amount),
+                     self.memo))
+
+    def __str__(self):
+        return "{dt}: {src} -> {dst} {amt} ({pay}: {memo})".format(dt=self.date.strftime("%d/%m/%Y"),
+                                                                   src=self.source_iban,
+                                                                   dst=self.dest_iban,
+                                                                   amt=self.amount,
+                                                                   pay=self.payee,
+                                                                   memo=self.memo)
+
     def is_transfer_transaction(self):
         return self.dest_iban in accounts
 
@@ -192,7 +221,9 @@ class QIFOutput:
         self.output_path = output_path
         self.output_file = None
         self.accounts = {}
-        self._transaction_list = {}
+        self._transaction_list = set()
+        self.added = 0
+        self.skipped = 0
 
     def __enter__(self):
         self.output_file = open(self.output_path, 'w')
@@ -206,8 +237,14 @@ class QIFOutput:
         self.output_file.close()
 
     def __iadd__(self, transaction: Trsx):
-        src_iban = transaction.source_iban
-        self._get_list(src_iban).append(transaction.get_qif_tx())
+        if transaction not in self._transaction_list:
+            self._get_list(transaction.source_iban).append(transaction.get_qif_tx())
+            self._transaction_list.add(transaction)
+            self.added += 1
+        else:
+            if args.verbose:
+                print("Found duplicated transaction: %s" % transaction)
+            self.skipped += 1
 
         return self
 
@@ -231,6 +268,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("source", nargs="+", help="ABN AMRO CAMT export file")
     parser.add_argument("--output", help="QIF output file")
+    parser.add_argument("--verbose", action='store_true')
     parser.add_argument('-c', "--config", help="The accounts configuration file. "
                                                "If not specified a file 'abnconv.ini' will be searched in $HOME, "
                                                "$HOME/.config/ or $PYSCRIPTS_CONFIG environment variables")
@@ -243,12 +281,15 @@ if __name__ == '__main__':
         accounts = {}
 
     out_path = args.output if args.output else args.source[0] + '.qif'
-    c = 0
-
     with QIFOutput(out_path) as out:
         for source_file in _all_files():
             for trsx in _trsx_list(source_file):
-                c += 1
                 out += trsx
 
-    print('Processed %d transactions' % c)
+    print("""
+Process completed:
+    {inserted} transactions inserted
+    into {accounts} accounts
+    and {dup} transactions reported as duplicated""".format(inserted=out.added,
+                                                            accounts=len(out.accounts),
+                                                            dup=out.skipped))
