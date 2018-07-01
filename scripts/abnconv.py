@@ -46,11 +46,26 @@ class Trsx:
         self.amount = None
         self.payee = None
         self.memo = None
+        self.transaction_desc = None
 
     def is_transfer_transaction(self):
         return self.dest_iban in accounts
 
-    def get_qif_tx(self, inverse=False):
+    def complementary(self):
+        if not self.is_transfer_transaction():
+            raise ValueError("Complementary Trsx available only for transfer transactions")
+
+        compl = Trsx(self.dest_iban)
+        compl.dest_iban = self.source_iban
+        compl.type = self.type
+        compl.date = self.date
+        compl.amount = self.amount * -1
+        compl.payee = self.payee
+        compl.memo = self.memo
+        compl.transaction_desc = self.transaction_desc
+        return compl
+
+    def get_qif_tx(self):
         def nn(v):
             return v if v else ''
 
@@ -64,16 +79,10 @@ class Trsx:
         }
 
         if self.is_transfer_transaction():
-            var['type'] = 'Oth A'
-
             if self.memo is None:
                 var['memo'] = 'Transfer'
 
-            if inverse:
-                var['amount'] *= -1
-                var['ledger'] = '[%s]' % _get_account(self.source_iban)
-            else:
-                var['ledger'] = '[%s]' % _get_account(self.dest_iban)
+            var['ledger'] = '[%s]' % _get_account(self.dest_iban)
 
         return qif_tpl_plain_tsx.format(**var)
 
@@ -102,42 +111,43 @@ def process_entry(account_iban, elem):
 
         return None, None
 
-    trsx = Trsx(account_iban)
+    tsx = Trsx(account_iban)
 
-    trsx.date = datetime.datetime.strptime(elem.find("xmlns:ValDt/xmlns:Dt", namespaces=ns).text, "%Y-%m-%d")
-    trsx.amount = float(elem.find("xmlns:Amt", namespaces=ns).text)
+    tsx.date = datetime.datetime.strptime(elem.find("xmlns:ValDt/xmlns:Dt", namespaces=ns).text, "%Y-%m-%d")
+    tsx.amount = float(elem.find("xmlns:Amt", namespaces=ns).text)
     if elem.find("xmlns:CdtDbtInd", namespaces=ns).text == 'DBIT':
-        trsx.amount *= -1
+        tsx.amount *= -1
 
     transaction_info = elem.find("xmlns:AddtlNtryInf", namespaces=ns).text
+    tsx.transaction_desc = transaction_info
 
     tx_type, match = _get_regex()
 
     if tx_type == 'bea':
-        trsx.type = 'Bank' if match.group("subtype") == 'B' else 'Cash'
-        trsx.payee = match.group("payee")
-        trsx.memo = transaction_info
+        tsx.type = 'Bank' if match.group("subtype") == 'B' else 'Cash'
+        tsx.payee = match.group("payee")
+        tsx.memo = transaction_info
 
     elif tx_type == 'sepa':
-        trsx.type = 'Bank'
-        trsx.payee = find_sepa_field('NAME')
-        trsx.memo = find_sepa_field("REMI")
-        trsx.dest_iban = find_sepa_field('IBAN')
+        tsx.type = 'Bank'
+        tsx.payee = find_sepa_field('NAME')
+        tsx.memo = find_sepa_field("REMI")
+        tsx.dest_iban = find_sepa_field('IBAN')
 
     elif tx_type == 'abn':
-        trsx.type = 'Bank'
-        trsx.payee = match.group("payee")
-        trsx.memo = match.group("memo")
+        tsx.type = 'Bank'
+        tsx.payee = match.group("payee")
+        tsx.memo = match.group("memo")
 
     elif tx_type == 'sparen':
-        trsx.type = 'Bank'
-        trsx.payee = "ABN AMRO Bank N.V."
-        trsx.memo = match.group("memo")
+        tsx.type = 'Bank'
+        tsx.payee = "ABN AMRO Bank N.V."
+        tsx.memo = match.group("memo")
 
     else:
         raise ValueError('Transaction type not supported for "%s"' % transaction_info)
 
-    return trsx
+    return tsx
 
 
 def _qif_account(account_name, account_type):
@@ -156,6 +166,8 @@ def _trsx_list(file):
             trsx = process_entry(account_iban, elem)
             if trsx:
                 yield trsx
+                if trsx.is_transfer_transaction():
+                    yield trsx.complementary()
     else:
         raise ValueError('Only CAM.53 XML files are supported')
 
@@ -180,6 +192,7 @@ class QIFOutput:
         self.output_path = output_path
         self.output_file = None
         self.accounts = {}
+        self._transaction_list = {}
 
     def __enter__(self):
         self.output_file = open(self.output_path, 'w')
@@ -192,24 +205,16 @@ class QIFOutput:
 
         self.output_file.close()
 
-    def __iadd__(self, trsx: Trsx):
-        src_iban = trsx.source_iban
-        tsx_entries = self._get_list(src_iban)
-
-        tsx_entries.append(trsx.get_qif_tx())
-
-        if trsx.is_transfer_transaction():
-            # for transfer transactions a double entry has to be written to the output
-            self._get_list(trsx.dest_iban).append(trsx.get_qif_tx(inverse=True))
+    def __iadd__(self, transaction: Trsx):
+        src_iban = transaction.source_iban
+        self._get_list(src_iban).append(transaction.get_qif_tx())
 
         return self
 
     def _get_list(self, account):
         if account not in self.accounts:
             self.accounts[account] = list()
-            self.accounts[account].append(qif_account_tpl.format(name=_get_account(account),
-                                                                 type='Bank'))
-                                                                 # type="Oth A" if is_saving else "Bank"))
+            self.accounts[account].append(qif_account_tpl.format(name=_get_account(account), type='Bank'))
         return self.accounts[account]
 
 
