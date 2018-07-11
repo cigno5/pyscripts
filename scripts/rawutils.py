@@ -36,29 +36,8 @@ class ImageInfo:
     def __init__(self, image_file, new_name_segments):
         self.file = image_file
         self.name, self.ext = split_filename(image_file)
-        self.fields = {}
+        self.fields = None
         self.name_segments = new_name_segments
-
-        tags = piexif.load(image_file)
-
-        def get_exif_value(exif_tags):
-            for exif_tag in exif_tags:
-                for sub_tags in tags.values():
-                    if exif_tag in sub_tags:
-                        # TODO implement check also for non-strings
-                        return sub_tags[exif_tag].decode('utf8')
-
-            raise ValueError('None of EXIF tags exist (%s)', str(exif_tags))
-
-        for field in FIELD_TAGS.keys():
-            value = get_exif_value(FIELD_TAGS[field])
-
-            try:
-                value = datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
-            except ValueError:
-                pass
-
-            self.fields[field] = value
 
         simple_file = os.path.basename(image_file).lower()
 
@@ -76,10 +55,36 @@ class ImageInfo:
 
         self.side_files = [(f, f[len(self.name):]) for f in _side_files]
 
+    def __init_fields(self):
+        if not self.fields:
+            self.fields = {}
+            tags = piexif.load(self.file)
+
+            def get_exif_value(exif_tags):
+                for exif_tag in exif_tags:
+                    for sub_tags in tags.values():
+                        if type(sub_tags) == dict and exif_tag in sub_tags:
+                            # TODO implement check also for non-strings
+                            return sub_tags[exif_tag].decode('utf8')
+
+                raise ValueError("None of EXIF tags exist for field '%s'" % field)
+
+            for field in FIELD_TAGS.keys():
+                value = get_exif_value(FIELD_TAGS[field])
+
+                try:
+                    value = datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
+                except ValueError:
+                    pass
+
+                self.fields[field] = value
+
     def get_new_image_filename(self):
+        self.__init_fields()
         return "".join([fn(self) for fn in self.name_segments] + ['.', self.ext])
 
     def get_filename_transformations(self, dups):
+        self.__init_fields()
         new_name = "".join([fn(self) for fn in self.name_segments])
         if dups > 0:
             new_name += "_%i" % dups
@@ -103,7 +108,7 @@ def __const(value):
 
 
 def __field(field):
-    def field_value(data:ImageInfo):
+    def field_value(data: ImageInfo):
         _v = data.fields[field]
         try:
             return datetime.strftime(_v, "%Y%m%dT%H%M%S")
@@ -115,33 +120,42 @@ def __field(field):
 
 def rename():
     _s = 0
-    segments = list()
-
+    name_segments = list()
     for var_match in re.finditer("\{(.+?)\}", args.name_template):
         tpl_var = var_match.group(1)
-        assert tpl_var in FIELD_TAGS, "Var '%s' is not valid (valid ones: %s)" % (tpl_var, str(FIELD_TAGS.keys()))
-        segments.append(__const(args.name_template[_s:var_match.start()]))
-        segments.append(__field(tpl_var))
+        assert tpl_var in FIELD_TAGS, "Var '%s' is not valid (valid ones: %s)" % (tpl_var, str(list(FIELD_TAGS.keys())))
+        name_segments.append(__const(args.name_template[_s:var_match.start()]))
+        name_segments.append(__field(tpl_var))
         _s = var_match.end()
-
-    segments.append(__const(args.name_template[_s:]))
+    name_segments.append(__const(args.name_template[_s:]))
 
     def rename_in_folder(target):
         target = os.path.abspath(target)
         print('Scanning %s/%s...' % (target, " (dry run) " if args.dry_run else ""))
         images_count = 0
+        errors_count = 0
         side_files_count = 0
 
         duplicates = dict()
 
         images_info = sorted(
-            [ImageInfo(image_file, segments) for image_file in find_images(target)],
+            [ImageInfo(image_file, name_segments) for image_file in find_images(target)],
             key=lambda ii: ii.name
         )
         for image_info in images_info:
             if args.verbose:
                 print("\n%s" % image_info)
-            new_name = image_info.get_new_image_filename()
+
+            try:
+                new_name = image_info.get_new_image_filename()
+            except ValueError as e:
+                __filename = os.path.basename(image_info.file)
+                if args.stop_on_fail:
+                    raise RuntimeError("Cannot rename file %s " % __filename, e)
+                else:
+                    print("{orig:40s} ========> ERROR!!! ({err}) ".format(orig=__filename, err=str(e)))
+                    errors_count += 1
+                    continue
 
             dups = duplicates[new_name] if new_name in duplicates else 0
             _first = True
@@ -158,7 +172,7 @@ def rename():
                     side_files_count += 1
                 _first = False
 
-        print('...renamed %i images and %i side files\n' % (images_count, side_files_count))
+        print('...renamed %i images and %i side files\n%i files skipped' % (images_count, side_files_count, errors_count))
         return images_count, side_files_count
 
     target_folder = os.path.expanduser(args.target)
@@ -206,7 +220,6 @@ def inspect():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-
     def __add_std_options(_parser):
         _parser.add_argument("--recursive", action="store_true", help="Check recursively in sub folders")
         _parser.add_argument("--verbose", action="store_true", help="Verbose logging")
@@ -218,9 +231,9 @@ if __name__ == '__main__':
     rename_parser.set_defaults(command="rename")
     rename_parser.add_argument("target", help="File or directory to process")
     rename_parser.add_argument("--dry-run", action="store_true", help="Doesn't rename anything")
+    rename_parser.add_argument("--stop-on-fail", action="store_true", help="Raises an exception for any error")
     rename_parser.add_argument("--name-template", default="IMG_{creation_date}",
                                help="The template for the name of the file (default IMG_{creation_date}}")
-    # rename_parser.add_argument("-d", "--delete-duplicates", action="store_true")
     __add_std_options(rename_parser)
 
     inspect_parser = subparsers.add_parser("inspect", help="Inspect RAW files")
