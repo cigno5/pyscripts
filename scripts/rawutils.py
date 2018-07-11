@@ -89,6 +89,9 @@ class ImageInfo:
         if dups > 0:
             new_name += "_%i" % dups
 
+        if args.compact:
+            new_name = new_name.replace(" ", '')
+
         ret = [(os.path.basename(self.file), new_name + "." + self.ext)]
         for side_file, file_rest in self.side_files:
             ret.append((side_file, new_name + file_rest))
@@ -232,6 +235,7 @@ if __name__ == '__main__':
     rename_parser.add_argument("target", help="File or directory to process")
     rename_parser.add_argument("--dry-run", action="store_true", help="Doesn't rename anything")
     rename_parser.add_argument("--stop-on-fail", action="store_true", help="Raises an exception for any error")
+    rename_parser.add_argument("--compact", action="store_true", help="Remove whitespaces in filename")
     rename_parser.add_argument("--name-template", default="IMG_{creation_date}",
                                help="The template for the name of the file (default IMG_{creation_date}}")
     __add_std_options(rename_parser)
