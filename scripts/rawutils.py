@@ -29,74 +29,63 @@ def find_images(target):
 def split_filename(file):
     bfile = os.path.basename(file)
     dot_idx = bfile.find(".")
-    return bfile[:dot_idx], bfile[dot_idx + 1:]
+    return bfile[:dot_idx], bfile[dot_idx:]
 
 
 class ImageInfo:
     def __init__(self, image_file, new_name_segments):
         self.file = image_file
-        self.name, self.ext = split_filename(image_file)
-        self.fields = None
-        self.name_segments = new_name_segments
+        self.folder = os.path.dirname(image_file)
 
-        simple_file = os.path.basename(image_file).lower()
+        # fields loading
+        self.fields = {}
+        tags = piexif.load(self.file)
 
-        def side_file(file):
-            lcase_file = file.lower()
-            lcase_name = self.name.lower()
-            return lcase_file != simple_file and lcase_file.startswith(lcase_name)
+        def _get_exif_value(exif_tags):
+            for exif_tag in exif_tags:
+                for sub_tags in tags.values():
+                    if type(sub_tags) == dict and exif_tag in sub_tags:
+                        # TODO implement check also for non-strings
+                        return sub_tags[exif_tag].decode('utf8')
 
-        _side_files = [f for f in os.listdir(os.path.dirname(image_file)) if side_file(f)]
-        # find derivative image files and their side files
-        for _derivative_image, _derivative_name, _ in [(i,) + split_filename(i) for i in _side_files if is_image(i)]:
-            _side_files.remove(_derivative_image)
-            [_side_files.remove(_deriv_side_file) for _deriv_side_file in
-             [sf for sf in _side_files if sf.startswith(_derivative_name)]]
+            raise ValueError("None of EXIF tags exist for field '%s'" % field)
 
-        self.side_files = [(f, f[len(self.name):]) for f in _side_files]
+        for field in FIELD_TAGS.keys():
+            value = _get_exif_value(FIELD_TAGS[field])
+            try:
+                value = datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
+            except ValueError:
+                pass
 
-    def __init_fields(self):
-        if not self.fields:
-            self.fields = {}
-            tags = piexif.load(self.file)
+            self.fields[field] = value
 
-            def get_exif_value(exif_tags):
-                for exif_tag in exif_tags:
-                    for sub_tags in tags.values():
-                        if type(sub_tags) == dict and exif_tag in sub_tags:
-                            # TODO implement check also for non-strings
-                            return sub_tags[exif_tag].decode('utf8')
+        # retrieve new name, based on fields
+        self.new_name = "".join([fn(self) for fn in new_name_segments])
 
-                raise ValueError("None of EXIF tags exist for field '%s'" % field)
+        # retrieve side files
+        _name, _ = split_filename(image_file)
+        self.side_files = [f for f in os.listdir(self.folder) if not is_image(f) and f.startswith(_name)]
 
-            for field in FIELD_TAGS.keys():
-                value = get_exif_value(FIELD_TAGS[field])
+    def get_renames(self, element_count=None):
+        """
+        Return list of tuples with old names and new names
+        :param element_count: number of current duplicate or None if no duplicate
+        :return:
+        """
+        rens = list()
 
-                try:
-                    value = datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
-                except ValueError:
-                    pass
+        new_base_name = self.new_name if element_count is None else "%s_%02i" % (self.new_name, element_count)
 
-                self.fields[field] = value
+        old_file = os.path.basename(self.file)
+        old_name, old_ext = split_filename(self.file)
 
-    def get_new_image_filename(self):
-        self.__init_fields()
-        return "".join([fn(self) for fn in self.name_segments] + ['.', self.ext])
+        rens.append((old_file, new_base_name + old_ext))
 
-    def get_filename_transformations(self, dups):
-        self.__init_fields()
-        new_name = "".join([fn(self) for fn in self.name_segments])
-        if dups > 0:
-            new_name += "_%i" % dups
+        for sf in self.side_files:
+            sf_new_name = new_base_name + sf[len(old_name):]
+            rens.append((sf, sf_new_name))
 
-        if args.compact:
-            new_name = new_name.replace(" ", '')
-
-        ret = [(os.path.basename(self.file), new_name + "." + self.ext)]
-        for side_file, file_rest in self.side_files:
-            ret.append((side_file, new_name + file_rest))
-
-        return ret
+        return rens
 
     def __str__(self):
         return ", ".join(["{}={}".format(attr, getattr(self, attr)) for attr in dir(self)
@@ -121,6 +110,24 @@ def __field(field):
     return field_value
 
 
+class Counters:
+    def __init__(self):
+        self.original_images = 0
+        self.images = 0
+        self.side_files = 0
+        self.skipped = 0
+        self.ignored = 0
+
+    def __add__(self, other):
+        nc = Counters()
+        nc.original_images = self.original_images + other.original_images
+        nc.images = self.images + other.images
+        nc.side_files = self.side_files + other.side_files
+        nc.skipped = self.skipped + other.skipped
+        nc.ignored = self.ignored + other.ignored
+        return nc
+
+
 def rename():
     _s = 0
     name_segments = list()
@@ -135,58 +142,81 @@ def rename():
     def rename_in_folder(target):
         target = os.path.abspath(target)
         print('Scanning %s/%s...' % (target, " (dry run) " if args.dry_run else ""))
-        images_count = 0
-        errors_count = 0
-        side_files_count = 0
 
-        duplicates = dict()
+        folder_count = Counters()
 
-        images_info = sorted(
-            [ImageInfo(image_file, name_segments) for image_file in find_images(target)],
-            key=lambda ii: ii.name
-        )
-        for image_info in images_info:
-            if args.verbose:
-                print("\n%s" % image_info)
-
+        images_info = dict()
+        for image_file in find_images(target):
+            folder_count.original_images += 1
             try:
-                new_name = image_info.get_new_image_filename()
+                ii = ImageInfo(image_file, name_segments)
+                if ii.new_name not in images_info:
+                    images_info[ii.new_name] = list()
+
+                images_info[ii.new_name].append(ii)
             except ValueError as e:
-                __filename = os.path.basename(image_info.file)
+                __filename = os.path.basename(image_file)
                 if args.stop_on_fail:
                     raise RuntimeError("Cannot rename file %s " % __filename, e)
                 else:
-                    print("{orig:40s} ========> ERROR!!! ({err}) ".format(orig=__filename, err=str(e)))
-                    errors_count += 1
+                    print("{orig:30s} -> ERROR ({err}) ".format(orig=__filename, err=str(e)))
+                    folder_count.skipped += 1
                     continue
 
-            dups = duplicates[new_name] if new_name in duplicates else 0
-            _first = True
-            for old, new in image_info.get_filename_transformations(dups):
-                print("{orig:40s} -> {new}".format(orig=old, new=new))
-                if not args.dry_run:
-                    os.rename(os.path.join(target, old), os.path.join(target, new))
+        for new_name in images_info.keys():
+            _alone = len(images_info[new_name]) == 1
+            _c = None if _alone else -1
+            for ii in images_info[new_name]:
 
-                duplicates[new_name] = dups + 1
+                if not _alone:
+                    _c += 1
 
-                if _first:
-                    images_count += 1
-                else:
-                    side_files_count += 1
-                _first = False
+                _first = True
+                for old, new in ii.get_renames(_c):
+                    print("{orig:30s} -> {new}".format(orig=old, new=new), end='... ')
+                    if old == new:
+                        print("Ignored")
+                        folder_count.ignored += 1
+                        continue
 
-        print('...renamed %i images and %i side files\n%i files skipped' % (images_count, side_files_count, errors_count))
-        return images_count, side_files_count
+                    if _first:
+                        folder_count.images += 1
+                        _first = False
+                    else:
+                        folder_count.side_files += 1
+
+                    if not args.dry_run:
+                        os.rename(os.path.join(target, old), os.path.join(target, new))
+                    print("Renamed")
+
+        print('...Total %i --> renamed %i images and %i side files; %i files ignored and %i skipped\n'
+              % (folder_count.original_images,
+                 folder_count.images, folder_count.side_files,
+                 folder_count.ignored,
+                 folder_count.skipped))
+        return folder_count
 
     target_folder = os.path.expanduser(args.target)
     # if recursive is better to run the function by each folder, without putting together images from different folders
     if args.recursive:
-        tot_imgs, tot_sf = 0, 0
+        total_count = Counters()
         for root, dirs, files in os.walk(target_folder):
-            imgs, sf = rename_in_folder(root)
-            tot_imgs += imgs
-            tot_sf += sf
-        print('Totally renamed %i images and %i side files' % (tot_imgs, tot_sf))
+            total_count += rename_in_folder(root)
+        print("""
+Summary =======================================
+  Total images....: {original_images}
+  Ignored.........: {ignored}
+  Skipped.........: {skipped}
+
+  Renamed.........: {images}
+    + side files..: {side_files}
+""".format(
+            original_images=total_count.original_images,
+            images=total_count.images,
+            side_files=total_count.side_files,
+            ignored=total_count.ignored,
+            skipped=total_count.skipped,
+        ))
     else:
         rename_in_folder(target_folder)
     print('Done.')
@@ -224,8 +254,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     def __add_std_options(_parser):
-        _parser.add_argument("--recursive", action="store_true", help="Check recursively in sub folders")
-        _parser.add_argument("--verbose", action="store_true", help="Verbose logging")
+        _parser.add_argument("-r", "--recursive", action="store_true", help="Check recursively in sub folders")
+        _parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
 
 
     subparsers = parser.add_subparsers()
