@@ -115,7 +115,7 @@ class Counters:
         self.original_images = 0
         self.images = 0
         self.side_files = 0
-        self.skipped = 0
+        self.error = 0
         self.ignored = 0
 
     def __add__(self, other):
@@ -123,7 +123,7 @@ class Counters:
         nc.original_images = self.original_images + other.original_images
         nc.images = self.images + other.images
         nc.side_files = self.side_files + other.side_files
-        nc.skipped = self.skipped + other.skipped
+        nc.error = self.error + other.error
         nc.ignored = self.ignored + other.ignored
         return nc
 
@@ -160,7 +160,7 @@ def rename():
                     raise RuntimeError("Cannot rename file %s " % __filename, e)
                 else:
                     print("{orig:30s} -> ERROR ({err}) ".format(orig=__filename, err=str(e)))
-                    folder_count.skipped += 1
+                    folder_count.error += 1
                     continue
 
         for new_name in images_info.keys():
@@ -175,7 +175,10 @@ def rename():
                 for old, new in ii.get_renames(_c):
                     print("{orig:30s} -> {new}".format(orig=old, new=new), end='... ')
                     if old == new:
-                        print("Ignored")
+                        if args.verbose:
+                            print("Ignored")
+                        else:
+                            print("Ignored", end='\r')
                         folder_count.ignored += 1
                         continue
 
@@ -189,11 +192,11 @@ def rename():
                         os.rename(os.path.join(target, old), os.path.join(target, new))
                     print("Renamed")
 
-        print('...Total %i --> renamed %i images and %i side files; %i files ignored and %i skipped\n'
+        print('...Total %i --> renamed %i images and %i side files; %i files ignored and %i in error\n'
               % (folder_count.original_images,
                  folder_count.images, folder_count.side_files,
                  folder_count.ignored,
-                 folder_count.skipped))
+                 folder_count.error))
         return folder_count
 
     target_folder = os.path.expanduser(args.target)
@@ -206,7 +209,7 @@ def rename():
 Summary =======================================
   Total images....: {original_images}
   Ignored.........: {ignored}
-  Skipped.........: {skipped}
+  Error...........: {error}
 
   Renamed.........: {images}
     + side files..: {side_files}
@@ -215,7 +218,7 @@ Summary =======================================
             images=total_count.images,
             side_files=total_count.side_files,
             ignored=total_count.ignored,
-            skipped=total_count.skipped,
+            error=total_count.error,
         ))
     else:
         rename_in_folder(target_folder)
