@@ -212,8 +212,12 @@ def _all_files():
                 yield _file
 
             shutil.rmtree(tmp_dir)
+            if args.prune:
+                os.remove(source)
         elif os.path.isfile(source) and source[-3:] == 'xml':
             yield source
+            if args.prune:
+                os.remove(source)
 
 
 class QIFOutput:
@@ -269,6 +273,7 @@ if __name__ == '__main__':
     parser.add_argument("source", nargs="+", help="ABN AMRO CAMT export file")
     parser.add_argument("--output", help="QIF output file")
     parser.add_argument("--verbose", action='store_true')
+    parser.add_argument("--prune", action='store_true', help='Delete original files when conversion is done')
     parser.add_argument('-c', "--config", help="The accounts configuration file. "
                                                "If not specified a file 'abnconv.ini' will be searched in $HOME, "
                                                "$HOME/.config/ or $PYSCRIPTS_CONFIG environment variables")
@@ -283,8 +288,8 @@ if __name__ == '__main__':
     out_path = args.output if args.output else args.source[0] + '.qif'
     with QIFOutput(out_path) as out:
         for source_file in _all_files():
-            for trsx in _trsx_list(source_file):
-                out += trsx
+            for _trsx in _trsx_list(source_file):
+                out += _trsx
 
     print("""
 Process completed:
