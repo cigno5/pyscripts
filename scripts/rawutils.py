@@ -1,15 +1,30 @@
 import argparse
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import piexif
 
 IMAGE_EXTS = ["cr2"]
 
+
+def __get_creation_date(tags):
+    for key in [piexif.ExifIFD.DateTimeOriginal, piexif.ImageIFD.DateTime]:
+        creation_date = datetime.strptime(_get_exif_value(tags, key), "%Y:%m:%d %H:%M:%S")
+        creation_date += timedelta(milliseconds=int(_get_exif_value(tags, piexif.ExifIFD.SubSecTimeOriginal)) * 10)
+        return creation_date
+
+
+def __get_model_value(tags):
+    for key in [piexif.ImageIFD.Model, piexif.ExifIFD.ImageUniqueID]:
+        val = _get_exif_value(tags, key)
+        if val:
+            return val
+
+
 FIELD_TAGS = {
-    'creation_date': [piexif.ExifIFD.DateTimeOriginal, piexif.ImageIFD.DateTime],
-    'model': [piexif.ImageIFD.Model, piexif.ExifIFD.ImageUniqueID]
+    'creation_date': __get_creation_date,
+    'model': __get_model_value,
 }
 
 
@@ -32,6 +47,12 @@ def split_filename(file):
     return bfile[:dot_idx], bfile[dot_idx:]
 
 
+def _get_exif_value(tags, exif_tag):
+    for sub_tags in tags.values():
+        if type(sub_tags) == dict and exif_tag in sub_tags:
+            return sub_tags[exif_tag].decode('utf8')
+
+
 class ImageInfo:
     def __init__(self, image_file, new_name_segments):
         self.file = image_file
@@ -41,23 +62,8 @@ class ImageInfo:
         self.fields = {}
         tags = piexif.load(self.file)
 
-        def _get_exif_value(exif_tags):
-            for exif_tag in exif_tags:
-                for sub_tags in tags.values():
-                    if type(sub_tags) == dict and exif_tag in sub_tags:
-                        # TODO implement check also for non-strings
-                        return sub_tags[exif_tag].decode('utf8')
-
-            raise ValueError("None of EXIF tags exist for field '%s'" % field)
-
         for field in FIELD_TAGS.keys():
-            value = _get_exif_value(FIELD_TAGS[field])
-            try:
-                value = datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
-            except ValueError:
-                pass
-
-            self.fields[field] = value
+            self.fields[field] = FIELD_TAGS[field](tags)
 
         # retrieve new name, based on fields
         self.new_name = "".join([fn(self) for fn in new_name_segments])
@@ -103,8 +109,9 @@ def __field(field):
     def field_value(data: ImageInfo):
         _v = data.fields[field]
         try:
-            return datetime.strftime(_v, "%Y%m%dT%H%M%S")
-        except TypeError:
+            t = _v.strftime("%Y%m%dT%H%M%S")
+            return t if args.short_date_format else "%s%02d" % (t, _v.microsecond / 10000)
+        except AttributeError:
             return _v
 
     return field_value
@@ -271,6 +278,8 @@ if __name__ == '__main__':
     rename_parser.add_argument("--compact", action="store_true", help="Remove whitespaces in filename")
     rename_parser.add_argument("--name-template", default="IMG_{creation_date}",
                                help="The template for the name of the file (default IMG_{creation_date}}")
+    rename_parser.add_argument("--short-date-format", action='store_true',
+                               help="Force to use creation date with no subsec time ")
     __add_std_options(rename_parser)
 
     inspect_parser = subparsers.add_parser("inspect", help="Inspect RAW files")
