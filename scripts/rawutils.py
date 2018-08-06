@@ -234,18 +234,34 @@ Summary =======================================
 
 def inspect():
     def inspect_file(file):
+        def _p(text):
+            if not args.filter:
+                print(text)
+
         print("file %s %s" % (file, "-" * 30))
         tags = piexif.load(file)
         for k, v in tags.items():
             if type(v) == bytes:
-                print("   Area %s: binary" % k)
+                _p("   Area %s: binary" % k)
             elif v is None:
-                print("   Area %s: empty" % k)
+                _p("   Area %s: empty" % k)
             else:
-                print("   Area %s" % k)
+                _p("   Area %s" % k)
 
                 tags_ref = piexif.TAGS[k]
                 for k2, v2 in v.items():
+
+                    if args.filter:
+                        found = False
+                        for f in args.filter:
+                            # print("f: %s ---> k: %s" % (f.lower(), k2.lower()))
+                            if f.lower() in tags_ref[k2]['name'].lower():
+                                found = True
+                                break
+
+                        if not found:
+                            continue
+
                     vtype = 'binary?' if len(str(v2)) > 100 else v2
                     if k2 in tags_ref:
                         print("      %s.%s: %s" % (k, tags_ref[k2]['name'], vtype))
@@ -285,6 +301,7 @@ if __name__ == '__main__':
     inspect_parser = subparsers.add_parser("inspect", help="Inspect RAW files")
     inspect_parser.set_defaults(command="inspect")
     inspect_parser.add_argument("target", help="File or directory to process")
+    inspect_parser.add_argument("--filter", nargs="+", help="Tags to be filtered")
     __add_std_options(inspect_parser)
 
     args = parser.parse_args()
