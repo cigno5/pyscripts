@@ -5,6 +5,7 @@ import datetime
 import os
 import re
 import shutil
+import sys
 import tempfile
 import xml.etree.ElementTree
 import zipfile
@@ -280,10 +281,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    try:
-        accounts = _load_accounts(_common.load_configuration(args.config if args.config else 'abnconv.ini'))
-    except _common.ConfigFileError:
-        accounts = {}
+    accounts = _load_accounts(_common.load_configuration(args.config if args.config else 'abnconv.ini'))
 
     out_path = args.output if args.output else args.source[0] + '.qif'
     with QIFOutput(out_path) as out:
