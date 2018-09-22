@@ -185,11 +185,13 @@ def _qif_account(account_name, account_type):
 
 
 def _trsx_list(file):
+    xml_parser = xml.etree.ElementTree.XMLParser(encoding='cp1252')
+
     def n(name):
         return "{urn:iso:std:iso:20022:tech:xsd:camt.053.001.02}" + name
 
     if file[-3:] == 'xml':
-        tree = xml.etree.ElementTree.parse(file)
+        tree = xml.etree.ElementTree.parse(file, xml_parser)
 
         account_iban = tree.find('xmlns:BkToCstmrStmt/xmlns:Stmt/xmlns:Acct/xmlns:Id/xmlns:IBAN', namespaces=ns).text
         for elem in tree.iter(tag=n("Ntry")):
