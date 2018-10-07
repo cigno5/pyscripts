@@ -124,6 +124,14 @@ def show():
 
 
 def backup():
+    backup_restore(False)
+
+
+def restore():
+    backup_restore(True)
+
+
+def backup_restore(is_backward_direction=False):
     for task_name in args.tasks:
         if task_name not in all_names:
             print("'%s' is not either a valid task or valid tag" % task_name)
@@ -168,6 +176,11 @@ Selected tasks          : {tasks}
             params = task.build_parameters(["-vzhirltoD"] if _is_cifs_mount() else ["-avzhi"])
 
             for source, destination in task.get_contents(mount_point):
+                if is_backward_direction:
+                    __s = source
+                    source = destination
+                    destination = __s
+
                 sync_text = "syncing {} -> {} ...".format(source, destination[len(mount_point):])
                 print(sync_text)
 
@@ -230,18 +243,21 @@ if __name__ == '__main__':
                                                "$HOME/.config/ or $PYSCRIPTS_CONFIG environment variables")
     parser.add_argument('--verbose', action='store_true')
 
-    sub_parser = parser.add_subparsers()
-    backup_parser = sub_parser.add_parser("backup", help="Execute the backup of the tasks")
-    backup_parser.set_defaults(command="backup")
-    backup_parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything')
-    backup_parser.add_argument('-f', '--force', action='store_true', help='Force backup of disabled tasks')
-    backup_parser.add_argument('tasks', nargs='*', help='Tasks to be backupped (or empty for all active tasks)')
+    sub_parsers = parser.add_subparsers()
 
-    show_parser = sub_parser.add_parser("show", help="Show useful information")
+    for __cmd, __help in [("backup", "Execute the backup of the tasks"), ("restore", "Execute the restore from backup")]:
+        bkp_parser = sub_parsers.add_parser(__cmd, help=__help)
+        bkp_parser.set_defaults(command=__cmd)
+        bkp_parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything')
+        bkp_parser.add_argument('-f', '--force', action='store_true', help='Force backup of disabled tasks')
+        bkp_parser.add_argument('--filter', help='Folder-based filter (regexp)')
+        bkp_parser.add_argument('tasks', nargs='*', help='Tasks to be backupped (or empty for all active tasks)')
+
+    show_parser = sub_parsers.add_parser("show", help="Show useful information")
     show_parser.set_defaults(command="show")
     show_parser.add_argument("subject", help="Subject of the request", choices=['tasks', 'tags'])
 
-    mount_parser = sub_parser.add_parser("mount", help="Mount remote repository")
+    mount_parser = sub_parsers.add_parser("mount", help="Mount remote repository")
     mount_parser.set_defaults(command="mount")
     # mount_parser.add_argument("subject", help="Subject of the request", choices=['tasks'])
 
