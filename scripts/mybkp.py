@@ -2,11 +2,12 @@ import argparse
 import collections
 import configparser
 import getpass
+import logging
 import os
 import shutil
 import sys
 import tempfile
-import logging
+
 import sh
 
 import _common
@@ -81,18 +82,6 @@ class Task:
         else:
             self.tags = None
 
-    def build_parameters(self, params):
-        if args.dry_run:
-            params.append('--dry-run')
-
-        if self.delete_missing:
-            params.append('--delete')
-
-        if self.exclude:
-            params += ["--exclude=%s" % excl for excl in self.exclude]
-
-        return params
-
     def get_contents(self, mount_point):
         for sub_folder in self.sub_folders:
             destination = sub_folder[1:] if len(sub_folder) > 0 and sub_folder[0] == '.' else sub_folder
@@ -144,6 +133,44 @@ def backup_restore(is_backward_direction=False):
         is_tagged_task = t.tags and [t for t in t.tags if t in args.tasks]
         return enabled and (no_task_specified or is_specified_task or is_tagged_task)
 
+    def build_parameters():
+        __params = ["-vzhirltoD"] if _is_cifs_mount() else ["-avzhi"]
+
+        if args.verbose:
+            __params.append('--verbose')
+
+        if args.dry_run:
+            __params.append('--dry-run')
+
+        if not args.avoid_delete and task.delete_missing:
+            __params.append('--delete')
+
+        if task.exclude:
+            __params += ["--exclude=%s" % excl for excl in task.exclude]
+
+        __filters = list()
+        if args.folder:
+            __filters.append(("--exclude", "*"))
+
+            for a_folder in args.folder:
+                head = a_folder if a_folder[-1] == '/' else a_folder + '/'
+                if head[0] == '/':
+                    head = head[1:]
+
+                __filters.append(("--include", "%s**" % head))
+
+                while True:
+                    head, tail = os.path.split(head)
+                    if head == '':
+                        break
+                    __filters.append(("--include", "%s/" % head))
+
+            for option, value in reversed(__filters):
+                __params.append(option)
+                __params.append(value)
+
+        return __params
+
     tasks = list(_get_tasks(eligible))
 
     if len(tasks) == 0:
@@ -173,7 +200,7 @@ Selected tasks          : {tasks}
                                    )
                            .encode())
 
-            params = task.build_parameters(["-vzhirltoD"] if _is_cifs_mount() else ["-avzhi"])
+            params = build_parameters()
 
             for source, destination in task.get_contents(mount_point):
                 if is_backward_direction:
@@ -249,8 +276,10 @@ if __name__ == '__main__':
         bkp_parser = sub_parsers.add_parser(__cmd, help=__help)
         bkp_parser.set_defaults(command=__cmd)
         bkp_parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything')
-        bkp_parser.add_argument('-f', '--force', action='store_true', help='Force backup of disabled tasks')
-        bkp_parser.add_argument('--filter', help='Folder-based filter (regexp)')
+        bkp_parser.add_argument('--force', action='store_true', help='Force backup of disabled tasks')
+        bkp_parser.add_argument('--avoid-delete', action='store_true', help="Don't use '--delete' rsync option")
+        bkp_parser.add_argument('--folder', nargs='*',
+                                help='Folder filter (starting from the root with no leading slash')
         bkp_parser.add_argument('tasks', nargs='*', help='Tasks to be backupped (or empty for all active tasks)')
 
     show_parser = sub_parsers.add_parser("show", help="Show useful information")
@@ -259,7 +288,6 @@ if __name__ == '__main__':
 
     mount_parser = sub_parsers.add_parser("mount", help="Mount remote repository")
     mount_parser.set_defaults(command="mount")
-    # mount_parser.add_argument("subject", help="Subject of the request", choices=['tasks'])
 
     args = parser.parse_args()
 
