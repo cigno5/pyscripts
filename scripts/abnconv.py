@@ -5,7 +5,6 @@ import datetime
 import os
 import re
 import shutil
-import sys
 import tempfile
 import xml.etree.ElementTree
 import zipfile
