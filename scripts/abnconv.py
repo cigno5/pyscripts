@@ -59,7 +59,6 @@ class Trsx:
         self.amount = None
         self.payee = None
         self.memo = None
-        self.transaction_desc = None
 
     def __eq__(self, other):
         if type(other) == Trsx:
@@ -69,8 +68,7 @@ class Trsx:
                    and self.date == other.date \
                    and self.amount == other.amount \
                    and self.payee == other.payee \
-                   and self.memo == other.memo \
-                   # and self.transaction_desc == other.transaction_desc
+                   and self.memo == other.memo
         else:
             return False
 
@@ -104,7 +102,6 @@ class Trsx:
         compl.amount = self.amount * -1
         compl.payee = self.payee
         compl.memo = self.memo
-        compl.transaction_desc = self.transaction_desc
         return compl
 
     def get_qif_tx(self):
@@ -161,7 +158,6 @@ def process_entry(account_iban, elem):
         tsx.amount *= -1
 
     transaction_info = elem.find("xmlns:AddtlNtryInf", namespaces=ns).text
-    tsx.transaction_desc = transaction_info
 
     tx_type, match = _get_regex()
 
