@@ -1,6 +1,7 @@
 from __future__ import absolute_import, print_function
 
 import argparse
+import collections
 import datetime
 import os
 import re
@@ -10,6 +11,8 @@ import xml.etree.ElementTree
 import zipfile
 
 import _common
+
+Account = collections.namedtuple('Account', 'iban,name,ics_account,ics_debit_iban')
 
 ns = {'xmlns': "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"}
 
@@ -121,13 +124,13 @@ class Trsx:
             if self.memo is None:
                 var['memo'] = 'Transfer'
 
-            var['ledger'] = '[%s]' % _get_account(self.dest_iban)
+            var['ledger'] = '[%s]' % _get_account_name(self.dest_iban)
 
         return qif_tpl_plain_tsx.format(**var)
 
 
-def _get_account(iban):
-    return accounts[iban]
+def _get_account_name(iban):
+    return accounts[iban].name
 
 
 def process_entry(account_iban, elem):
@@ -272,15 +275,25 @@ class QIFOutput:
     def _get_list(self, account):
         if account not in self.accounts:
             self.accounts[account] = list()
-            self.accounts[account].append(qif_account_tpl.format(name=_get_account(account), type='Bank'))
+            self.accounts[account].append(qif_account_tpl.format(name=_get_account_name(account), type='Bank'))
         return self.accounts[account]
 
 
-def _load_accounts(conf_parser):
+def find_account(ics_account):
+    for account in accounts.values():
+        if account.ics_account and account.ics_account == ics_account:
+            return account
+
+
+def load_accounts(conf_file):
+    conf_parser = _common.load_configuration(conf_file)
     _accounts = {}
     for account_conf in [conf_parser[section] for section in conf_parser.sections()]:
-        _acc_iban = account_conf['iban']
-        _accounts[_acc_iban] = account_conf['name'] if 'name' in account_conf else _acc_iban
+        iban = account_conf['iban']
+        name = account_conf.get('name', iban)
+        ics_account = account_conf.get('ics_account', None)
+        ics_debit_iban = account_conf.get('ics_debit_iban', None)
+        _accounts[iban] = Account(iban, name, ics_account, ics_debit_iban)
 
     return _accounts
 
@@ -297,7 +310,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    accounts = _load_accounts(_common.load_configuration(args.config if args.config else 'abnconv.ini'))
+    accounts = load_accounts(args.config or 'abnconv.ini')
 
     out_path = args.output if args.output else args.source[0] + '.qif'
     with QIFOutput(out_path) as out:

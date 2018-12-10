@@ -1,22 +1,24 @@
 import argparse
+import getpass
 import json
 import os
 from datetime import datetime, timedelta
 
 import requests
 
-import _common
+import abnconv
+from abnconv import QIFOutput, Trsx
 
 
 def extract_transactions():
     base_url = "https://www.icscards.nl"
     login_url = "%s/pub/nl/pub/login" % base_url
+    account_url = "%s/sec/nl/sec/allaccountsv2" % base_url
     transactions_url = \
-        "{baseurl}/sec/nl/sec/transactions/search?fromDate={start_date}&untilDate={end_date}&accountNumber={account}" \
+        "{baseurl}/sec/nl/sec/transactions/search?fromDate={start_date}&untilDate={end_date}&accountNumber=" \
             .format(baseurl=base_url,
                     start_date=from_date.strftime("%Y-%m-%d"),
-                    end_date=to_date.strftime("%Y-%m-%d"),
-                    account=account)
+                    end_date=to_date.strftime("%Y-%m-%d"),)
 
     s = requests.Session()
     s.get(base_url)
@@ -31,28 +33,27 @@ def extract_transactions():
         'X-XSRF-TOKEN': s.cookies.get('XSRF-TOKEN')
     }
 
-    r = s.get(transactions_url, headers=more_headers)
-    return json.loads(r.text)
+    r = s.get(account_url, headers=more_headers)
+    if not r.ok:
+        raise ValueError
+
+    all_transactions = list()
+    for account_data in [ad for ad in json.loads(r.text) if ad['valid'] is True]:
+        account_number = str(account_data['accountNumber'])
+        r = s.get(transactions_url + account_number, headers=more_headers)
+        account_transactions = json.loads(r.text)
+        for account_transaction in account_transactions:
+            account_transaction['accountNumber'] = account_number
+            all_transactions.append(account_transaction)
+
+    return all_transactions
 
 
 def load_settings():
-    try:
-        _settings = dict(_common.load_configuration(args.config or 'icsexport.ini')['icscards'])
-    except _common.ConfigFileError:
-        _settings = {}
-
-    if args.username:
-        _settings['username'] = args.username
-
     if args.password:
-        _settings['password'] = args.password
-
-    if args.account:
-        _settings['account'] = args.account
-
-    for k in ['username', 'password', 'account']:
-        if k not in _settings:
-            raise ValueError("Missing '%s' settings " % k)
+        _password = args.password
+    else:
+        _password = getpass.getpass(prompt='Please input your password')
 
     if args.from_date:
         _from = datetime.strptime(args.from_date, "%d%m%Y")
@@ -67,42 +68,51 @@ def load_settings():
     if args.file:
         _file = args.file
     else:
-        _file = os.path.join(os.getcwd(), "transactions-%s_%s-%s.%s" % (
-            _settings['account'], _from.strftime("%d%m%Y"), _to.strftime("%d%m%Y"), args.format
+        _file = os.path.join(os.getcwd(), "transactions_%s-%s.qif" % (
+            _from.strftime("%d%m%Y"), _to.strftime("%d%m%Y")
         ))
 
-    return _settings['username'], _settings['password'], _settings['account'], _from, _to, _file
+    return args.username, _password, _from, _to, _file
 
 
 def export_transactions():
-    with open(file, 'w') as output:
-        keys = transactions[0].keys()
-        if args.format == 'csv':
-            output.write(";".join(keys) + "\n")
-
+    with QIFOutput(file) as out:
         for transaction in transactions:
-            output.write(";".join([str(transaction[key]) for key in keys]) + "\n")
+            account = abnconv.find_account(transaction['accountNumber'])
+
+            tsx = Trsx(account.iban)
+            tsx.type = 'Bank'
+            tsx.payee = transaction['description']
+            tsx.transaction_desc = transaction['description']
+
+            tsx.memo = None
+
+            tsx.dest_iban = account.ics_debit_iban
+
+            tsx.date = datetime.strptime(transaction['transactionDate'], '%Y-%m-%d') - timedelta(days=1)
+            tsx.amount = float(transaction['billingAmount']) * -1
+
+            tsx.is_transfer_transaction = lambda: transaction['typeOfTransaction'] == 'P'
+
+            out += tsx
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("-u", "--username", help="Username")
-    parser.add_argument("-p", "--password", help="Password")
-    parser.add_argument("-a", "--account", help="Account number")
-    parser.add_argument('-c', "--config",
-                        help="The exporter configuration file. Parameters -u,-p and -a will override this settings"
-                             "If not specified a file 'icsexport.ini' will be searched in $HOME, "
-                             "$HOME/.config/ or $PYSCRIPTS_CONFIG environment variables")
+    parser.add_argument("username", help="Username")
+    parser.add_argument("-p", "--password", help="Password, if not specified it will be requested")
+    parser.add_argument("-c", "--config", help="Abnconv.ini configuration file (as for abnconv script)")
 
     parser.add_argument("--from-date", help="From date in format ddmmyyyy (default: beginning of the month)")
     parser.add_argument("--to-date", help="To date in format ddmmyyyy (default: today)")
 
     parser.add_argument("--file", help="Output file (default will be created using dates)")
-    parser.add_argument("--format", choices=['csv', 'qif'], help="Output format", default='csv')
 
     args = parser.parse_args()
 
-    username, password, account, from_date, to_date, file = load_settings()
+    abnconv.accounts = abnconv.load_accounts(args.config or 'abnconv.ini')
+
+    username, password,  from_date, to_date, file = load_settings()
 
     transactions = extract_transactions()
 
