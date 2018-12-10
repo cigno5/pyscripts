@@ -2,6 +2,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 from datetime import datetime, timedelta
 
 import requests
@@ -18,7 +19,7 @@ def extract_transactions():
         "{baseurl}/sec/nl/sec/transactions/search?fromDate={start_date}&untilDate={end_date}&accountNumber=" \
             .format(baseurl=base_url,
                     start_date=from_date.strftime("%Y-%m-%d"),
-                    end_date=to_date.strftime("%Y-%m-%d"),)
+                    end_date=to_date.strftime("%Y-%m-%d"), )
 
     s = requests.Session()
     s.get(base_url)
@@ -76,23 +77,26 @@ def load_settings():
 
 
 def export_transactions():
+    payee_re = re.compile("((www.)?[\w\.]+).+")
+
     with QIFOutput(file) as out:
         for transaction in transactions:
             account = abnconv.find_account(transaction['accountNumber'])
+            description = transaction['description']
 
             tsx = Trsx(account.iban)
             tsx.type = 'Bank'
-            tsx.payee = transaction['description']
-            tsx.transaction_desc = transaction['description']
+            tsx.memo = description
 
-            tsx.memo = None
-
-            tsx.dest_iban = account.ics_debit_iban
-
-            tsx.date = datetime.strptime(transaction['transactionDate'], '%Y-%m-%d') - timedelta(days=1)
+            tsx.date = datetime.strptime(transaction['transactionDate'], '%Y-%m-%d')
             tsx.amount = float(transaction['billingAmount']) * -1
 
-            tsx.is_transfer_transaction = lambda: transaction['typeOfTransaction'] == 'P'
+            tsx.payee = payee_re.search(description).group(1)
+
+            if transaction['typeOfTransaction'] == 'P':
+                tsx.dest_iban = account.ics_debit_iban
+                tsx.payee = None
+                tsx.date -= timedelta(days=1)
 
             out += tsx
 
@@ -112,7 +116,7 @@ if __name__ == '__main__':
 
     abnconv.accounts = abnconv.load_accounts(args.config or 'abnconv.ini')
 
-    username, password,  from_date, to_date, file = load_settings()
+    username, password, from_date, to_date, file = load_settings()
 
     transactions = extract_transactions()
 
