@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from datetime import datetime, timedelta
 
 import requests
@@ -7,7 +8,7 @@ import requests
 import _common
 
 
-def export():
+def extract_transactions():
     base_url = "https://www.icscards.nl"
     login_url = "%s/pub/nl/pub/login" % base_url
     transactions_url = \
@@ -63,7 +64,24 @@ def load_settings():
     else:
         _to = datetime.now()
 
-    return _settings['username'], _settings['password'], _settings['account'], _from, _to
+    if args.file:
+        _file = args.file
+    else:
+        _file = os.path.join(os.getcwd(), "transactions-%s_%s-%s.%s" % (
+            _settings['account'], _from.strftime("%d%m%Y"), _to.strftime("%d%m%Y"), args.format
+        ))
+
+    return _settings['username'], _settings['password'], _settings['account'], _from, _to, _file
+
+
+def export_transactions():
+    with open(file, 'w') as output:
+        keys = transactions[0].keys()
+        if args.format == 'csv':
+            output.write(";".join(keys) + "\n")
+
+        for transaction in transactions:
+            output.write(";".join([str(transaction[key]) for key in keys]) + "\n")
 
 
 if __name__ == '__main__':
@@ -79,10 +97,16 @@ if __name__ == '__main__':
     parser.add_argument("--from-date", help="From date in format ddmmyyyy (default: beginning of the month)")
     parser.add_argument("--to-date", help="To date in format ddmmyyyy (default: today)")
 
+    parser.add_argument("--file", help="Output file (default will be created using dates)")
+    parser.add_argument("--format", choices=['csv', 'qif'], help="Output format", default='csv')
+
     args = parser.parse_args()
 
-    username, password, account, from_date, to_date = load_settings()
+    username, password, account, from_date, to_date, file = load_settings()
 
-    transaction_list = export()
-    for transaction in transaction_list:
-        print(transaction)
+    transactions = extract_transactions()
+
+    if len(transactions) > 0:
+        export_transactions()
+    else:
+        print("No transaction found in the specified period")
