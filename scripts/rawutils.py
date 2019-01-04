@@ -11,7 +11,9 @@ IMAGE_EXTS = ["cr2"]
 def __get_creation_date(tags):
     for key in [piexif.ExifIFD.DateTimeOriginal, piexif.ImageIFD.DateTime]:
         creation_date = datetime.strptime(_get_exif_value(tags, key), "%Y:%m:%d %H:%M:%S")
-        creation_date += timedelta(milliseconds=int(_get_exif_value(tags, piexif.ExifIFD.SubSecTimeOriginal)) * 10)
+        sub_sec = _get_exif_value(tags, piexif.ExifIFD.SubSecTimeOriginal)
+        if sub_sec:
+            creation_date += timedelta(milliseconds=int(sub_sec) * 10)
         return creation_date
 
 
