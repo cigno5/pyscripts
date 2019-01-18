@@ -1,3 +1,4 @@
+requests
 stravalib
 sh
 Pillow
