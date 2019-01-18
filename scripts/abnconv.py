@@ -18,8 +18,8 @@ ns = {'xmlns': "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"}
 
 BEA_re = re.compile("(?P<subtype>[GB])EA.+(\d{2}.){4}\d{2}(?P<payee>.+),PAS(\d+)")
 
-SEPA_re = re.compile("/TRTP/.+")
-SEPA_markers_re = re.compile("/(TRTP|CSID|NAME|MARF|REMI|IBAN|BIC|EREF)/")
+SEPA_re = re.compile("/(TRTP|RTYP)/.+")
+SEPA_markers_re = re.compile("/(TRTP|RTYP|CSID|NAME|MARF|REMI|IBAN|BIC|EREF)/")
 
 ABN_re = re.compile("(?P<payee>ABN AMRO Bank N.V.)\s+(?P<memo>\w+).+")
 
@@ -186,9 +186,10 @@ def process_entry(account_iban, elem):
         tsx.type = 'Cash'
         tsx.payee = 'Unknwon'
         tsx.memo = None
-
     else:
-        raise ValueError('Transaction type not supported for "%s"' % transaction_info)
+        tsx.type = 'Bank'
+        tsx.payee = 'Unknwon'
+        tsx.memo = transaction_info
 
     return tsx
 
@@ -262,7 +263,7 @@ class QIFOutput:
             self._transaction_list.add(transaction)
             self.added += 1
         else:
-            if args.verbose:
+            if 'args' in vars() and args.verbose:
                 print("Found duplicated transaction: %s" % transaction)
             self.skipped += 1
 
