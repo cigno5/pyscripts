@@ -219,6 +219,15 @@ def _trsx_list(file):
 
 
 def _all_files():
+    def cleanup_file():
+        _tmp_file = os.path.join(tmp_dir, 'tmp_clean')
+        with open(_tmp_file, 'w') as tmp_clean:
+            with open(_file, 'r') as dirty_file:
+                for l in dirty_file.readlines():
+                    tmp_clean.write(l.replace('\x00', ''))
+        os.remove(_file)
+        os.rename(_tmp_file, _file)
+
     for source in args.source:
         if zipfile.is_zipfile(source):
             tmp_dir = tempfile.mkdtemp(prefix="abnconv_")
@@ -226,6 +235,7 @@ def _all_files():
                 zf.extractall(tmp_dir)
 
             for _file in [os.path.join(tmp_dir, f) for f in os.listdir(tmp_dir)]:
+                cleanup_file()
                 yield _file
 
             shutil.rmtree(tmp_dir)
