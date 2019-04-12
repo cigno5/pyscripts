@@ -1,3 +1,6 @@
+tabulate
+xlrd
+openpyxl
 requests
 stravalib
 sh
