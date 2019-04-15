@@ -394,10 +394,7 @@ def __build_filters(flts_):
 
             def _filter(row):
                 v = row[int(col.strip())]
-                if type(v) == int:
-                    v = str(v)
-                else:
-                    v = v.strip().lower()
+                v = str(v).strip().lower()
                 if text == '*empty':
                     ret = v is None or v == ''
                 else:
