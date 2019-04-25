@@ -327,7 +327,10 @@ def check_uniqueness():
 
 
 def show_rows():
-    headers = ["line #"] + [h for _, h in enumerate_cells(next(data)[1])]
+    if args.hide_linenum:
+        headers = [h for _, h in enumerate_cells(next(data)[1])]
+    else:
+        headers = ["line #"] + [h for _, h in enumerate_cells(next(data)[1])]
 
     table = [headers]
 
@@ -337,7 +340,10 @@ def show_rows():
         if args.limit and c > args.limit:
             break
 
-        table.append([line] + [v for _, v in enumerate_cells(row)])
+        if args.hide_linenum:
+            table.append([v for _, v in enumerate_cells(row)])
+        else:
+            table.append([line] + [v for _, v in enumerate_cells(row)])
 
     print_table(table)
 
@@ -441,6 +447,8 @@ if __name__ == '__main__':
     output_options_grp.add_argument("--format", choices=["csv", "human"], default="human", help="Output format")
     output_options_grp.add_argument("--extended-text", action='store_true',
                                     help="Show extended texts (by default text is cut after 50 chars)")
+    output_options_grp.add_argument("--hide-linenum", action='store_true',
+                                    help="Hide line number when show rows")
 
     csv_options_grp = parser.add_argument_group("CSV options")
     csv_options_grp.add_argument("--delimiter", default=';', help="CSV column delimiter")
