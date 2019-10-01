@@ -322,10 +322,16 @@ def check_uniqueness():
 
     non_unique_keys = dict([(k, c) for (k, c) in key_counter.items() if len(c) > 1])
     if non_unique_keys:
-        print("Some values are not unique:")
+        print("Some values are not unique (%d tuples): " % len(non_unique_keys))
         table = [["Key", "# occ", "Lines #"]]
+        too_much_counter = 0
         for k, v in non_unique_keys.items():
+            too_much_counter += 1
             table.append([k, len(v), ", ".join((str(_v) for _v in v))])
+
+            if too_much_counter > 50:
+                table.append(['*** TOO MANY RESULTS ***', '***', "***"])
+                break
 
         print_table(table)
     else:
