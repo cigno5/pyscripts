@@ -95,6 +95,7 @@ class CsvDataReader(DataReader):
     def __init__(self, file, delimiter, quote_char):
         super().__init__()
 
+        self.file_path = file
         self.file = open(file, 'r')
         self.data = csv.reader(self.file, delimiter=delimiter, quotechar=quote_char)
         self.__local_progress = 0
@@ -107,8 +108,13 @@ class CsvDataReader(DataReader):
         row = next(self.data)
 
         if self.__estimated_n_rows is None:
-            _len = len(",".join([str(x) for x in row]))
-            self.__estimated_n_rows = self.__file_size / _len
+            with open(self.file_path, 'r') as x:
+                _len = 0
+                _steps = 1000
+                for _ in range(0, _steps):
+                    _len += len(x.readline())
+                _len /= _steps
+                self.__estimated_n_rows = self.__file_size / _len
 
         return row
 
