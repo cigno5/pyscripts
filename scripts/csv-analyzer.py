@@ -95,6 +95,7 @@ class CsvDataReader(DataReader):
     def __init__(self, file, delimiter, quote_char):
         super().__init__()
 
+        self.file_path = file
         self.file = open(file, 'r')
         self.data = csv.reader(self.file, delimiter=delimiter, quotechar=quote_char)
         self.__local_progress = 0
@@ -107,8 +108,13 @@ class CsvDataReader(DataReader):
         row = next(self.data)
 
         if self.__estimated_n_rows is None:
-            _len = len(",".join([str(x) for x in row]))
-            self.__estimated_n_rows = self.__file_size / _len
+            with open(self.file_path, 'r') as x:
+                _len = 0
+                _steps = 1000
+                for _ in range(0, _steps):
+                    _len += len(x.readline())
+                _len /= _steps
+                self.__estimated_n_rows = self.__file_size / _len
 
         return row
 
@@ -316,10 +322,16 @@ def check_uniqueness():
 
     non_unique_keys = dict([(k, c) for (k, c) in key_counter.items() if len(c) > 1])
     if non_unique_keys:
-        print("Some values are not unique:")
+        print("Some values are not unique (%d tuples): " % len(non_unique_keys))
         table = [["Key", "# occ", "Lines #"]]
+        too_much_counter = 0
         for k, v in non_unique_keys.items():
+            too_much_counter += 1
             table.append([k, len(v), ", ".join((str(_v) for _v in v))])
+
+            if too_much_counter > 50:
+                table.append(['*** TOO MANY RESULTS ***', '***', "***"])
+                break
 
         print_table(table)
     else:
@@ -327,7 +339,10 @@ def check_uniqueness():
 
 
 def show_rows():
-    headers = ["line #"] + [h for _, h in enumerate_cells(next(data)[1])]
+    if args.hide_linenum:
+        headers = [h for _, h in enumerate_cells(next(data)[1])]
+    else:
+        headers = ["line #"] + [h for _, h in enumerate_cells(next(data)[1])]
 
     table = [headers]
 
@@ -337,7 +352,10 @@ def show_rows():
         if args.limit and c > args.limit:
             break
 
-        table.append([line] + [v for _, v in enumerate_cells(row)])
+        if args.hide_linenum:
+            table.append([v for _, v in enumerate_cells(row)])
+        else:
+            table.append([line] + [v for _, v in enumerate_cells(row)])
 
     print_table(table)
 
@@ -394,10 +412,7 @@ def __build_filters(flts_):
 
             def _filter(row):
                 v = row[int(col.strip())]
-                if type(v) == int:
-                    v = str(v)
-                else:
-                    v = v.strip().lower()
+                v = str(v).strip().lower()
                 if text == '*empty':
                     ret = v is None or v == ''
                 else:
@@ -444,6 +459,8 @@ if __name__ == '__main__':
     output_options_grp.add_argument("--format", choices=["csv", "human"], default="human", help="Output format")
     output_options_grp.add_argument("--extended-text", action='store_true',
                                     help="Show extended texts (by default text is cut after 50 chars)")
+    output_options_grp.add_argument("--hide-linenum", action='store_true',
+                                    help="Hide line number when show rows")
 
     csv_options_grp = parser.add_argument_group("CSV options")
     csv_options_grp.add_argument("--delimiter", default=';', help="CSV column delimiter")
