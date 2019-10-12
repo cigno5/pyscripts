@@ -27,12 +27,15 @@ SPAREN_re = re.compile("ACCOUNT BALANCED\s+(?P<memo>CREDIT INTEREST.+)For intere
 
 STORTING_re = re.compile("STORTING\s+.+,PAS (\d+)")
 
+TIKKIE_re = re.compile("/REMI/(?P<memo>(?P<id>Tikkie ID \d+),\s*(?P<info>.+?),\s*Van\s+(?P<payee>.+?),\s*(?P<iban>\w\w\d\d[\w\d]{4}\d{10,}))")
+
 SUPPORTED_TRANSACTIONS = {
+    'tikkie': TIKKIE_re,
     'bea': BEA_re,
     'sepa': SEPA_re,
     'abn': ABN_re,
     'sparen': SPAREN_re,
-    'storting': STORTING_re
+    'storting': STORTING_re,
 }
 
 qif_account_tpl = """!Account
@@ -172,6 +175,12 @@ def process_entry(account_iban, elem):
         tsx.memo = find_sepa_field("REMI")
         tsx.dest_iban = find_sepa_field('IBAN')
 
+    elif tx_type == 'tikkie':
+        tsx.type = 'Bank'
+        tsx.payee = match.group("payee")
+        tsx.memo = match.group("memo")
+        tsx.dest_iban = match.group('iban')
+
     elif tx_type == 'abn':
         tsx.type = 'Bank'
         tsx.payee = match.group("payee")
@@ -212,8 +221,9 @@ def _trsx_list(file):
             trsx = process_entry(account_iban, elem)
             if trsx:
                 yield trsx
-                if trsx.is_transfer_transaction():
-                    yield trsx.complementary()
+                # complementary transaction is not needed anymore, homeback is able to spot it by its own
+                # if trsx.is_transfer_transaction():
+                #     yield trsx.complementary()
     else:
         raise ValueError('Only CAM.53 XML files are supported')
 
