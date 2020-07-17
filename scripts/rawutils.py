@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import piexif
 
-IMAGE_EXTS = ["cr2"]
+IMAGE_EXTS = ["cr2", "jpg", "3fr"]
 
 
 def __get_creation_date(tags):
