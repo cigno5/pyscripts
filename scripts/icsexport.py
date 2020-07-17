@@ -3,6 +3,7 @@ import getpass
 import json
 import os
 import re
+import sys
 from datetime import datetime, timedelta
 
 import requests
@@ -50,6 +51,19 @@ def extract_transactions():
     return all_transactions
 
 
+def read_transactions():
+    for line in sys.stdin:
+        account_transactions = json.loads(line)
+        break
+
+    all_transactions = list()
+    for account_transaction in account_transactions:
+        account_transaction['accountNumber'] = '65770350018'
+        all_transactions.append(account_transaction)
+
+    return all_transactions
+
+
 def load_settings():
     if args.password:
         _password = args.password
@@ -57,7 +71,10 @@ def load_settings():
         _password = getpass.getpass(prompt='Please input your password')
 
     if args.from_date:
-        _from = datetime.strptime(args.from_date, "%d%m%Y")
+        try:
+            _from = datetime.strptime(args.from_date, "%d%m%Y")
+        except ValueError:
+            _from = datetime.now() - timedelta(days=abs(int(args.from_date)))
     else:
         _from = (datetime.now() - timedelta(days=1)).replace(day=1)
 
@@ -81,6 +98,9 @@ def export_transactions():
 
     with QIFOutput(file) as out:
         for transaction in transactions:
+            if transaction['transactionDate'] is None or transaction['description'] == '':
+                continue
+
             account = abnconv.find_account(transaction['accountNumber'])
             description = transaction['description']
 
@@ -107,10 +127,13 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--password", help="Password, if not specified it will be requested")
     parser.add_argument("-c", "--config", help="Abnconv.ini configuration file (as for abnconv script)")
 
-    parser.add_argument("--from-date", help="From date in format ddmmyyyy (default: beginning of the month)")
+    parser.add_argument("--from-date", help="From date in format ddmmyyyy (default: beginning of the month) "
+                                            "or -d (days)")
     parser.add_argument("--to-date", help="To date in format ddmmyyyy (default: today)")
 
     parser.add_argument("--file", help="Output file (default will be created using dates)")
+
+    parser.add_argument("--read", action='store_true', help="Read transactions from stdin (such a shame!)")
 
     args = parser.parse_args()
 
@@ -118,7 +141,12 @@ if __name__ == '__main__':
 
     username, password, from_date, to_date, file = load_settings()
 
-    transactions = extract_transactions()
+    if args.read:
+        print("Read transactions from stdin")
+        transactions = read_transactions()
+    else:
+        print("Extract transactions from %s to %a" % (from_date.strftime("%d/%m/%Y"), to_date.strftime("%d/%m/%Y")))
+        transactions = extract_transactions()
 
     if len(transactions) > 0:
         export_transactions()
