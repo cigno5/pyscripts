@@ -1,32 +1,47 @@
 import argparse
+import collections
 import os
 import re
+import subprocess
 from datetime import datetime, timedelta
 
-import piexif
+IMAGE_EXTS = ["cr2", "jpg", "3fr", "raf"]
+EXIF_TAGS_RE = re.compile("^(?P<tag>Exif\.[\w\.]+)\s+(?P<type>\w+)\s+(?P<size>\d+)\s+(?P<value>.+)$")
 
-IMAGE_EXTS = ["cr2", "jpg", "3fr"]
+ExifTag = collections.namedtuple('ExifTag', 'tag, type, size, value')
+
+
+def load_exiv2_data(image_file):
+    out = subprocess.check_output(["exiv2", "-PE", image_file])
+
+    tags = {}
+
+    for tag in (ExifTag(*EXIF_TAGS_RE.search(line).groups()) for line in out.decode('utf-8').splitlines()):
+        tags[tag.tag] = tag.value
+
+    return tags
 
 
 def __get_creation_date(tags):
-    for key in [piexif.ExifIFD.DateTimeOriginal, piexif.ImageIFD.DateTime]:
-        creation_date = datetime.strptime(_get_exif_value(tags, key), "%Y:%m:%d %H:%M:%S")
-        sub_sec = _get_exif_value(tags, piexif.ExifIFD.SubSecTimeOriginal)
-        if sub_sec:
-            creation_date += timedelta(milliseconds=int(sub_sec) * 10)
+    for key in ["Exif.Photo.DateTimeOriginal", "Exif.Image.DateTime"]:
+        creation_date = datetime.strptime(tags[key], "%Y:%m:%d %H:%M:%S")
+
+        camera_maker = tags['Exif.Image.Make']
+        if camera_maker == 'Canon':
+            sub_sec = tags['Exif.Photo.SubSecTimeOriginal']
+            if sub_sec:
+                creation_date += timedelta(milliseconds=int(sub_sec) * 10)
+        elif camera_maker == 'FUJIFILM':
+            sequence = tags['Exif.Fujifilm.SequenceNumber']
+            if sequence:
+                creation_date += timedelta(milliseconds=int(sequence) * 10)
+
         return creation_date
-
-
-def __get_model_value(tags):
-    for key in [piexif.ImageIFD.Model, piexif.ExifIFD.ImageUniqueID]:
-        val = _get_exif_value(tags, key)
-        if val:
-            return val
 
 
 FIELD_TAGS = {
     'creation_date': __get_creation_date,
-    'model': __get_model_value,
+    'model': lambda tags: tags['Exif.Image.Model'],
 }
 
 
@@ -49,12 +64,6 @@ def split_filename(file):
     return bfile[:dot_idx], bfile[dot_idx:]
 
 
-def _get_exif_value(tags, exif_tag):
-    for sub_tags in tags.values():
-        if type(sub_tags) == dict and exif_tag in sub_tags:
-            return sub_tags[exif_tag].decode('utf8')
-
-
 class ImageInfo:
     def __init__(self, image_file, new_name_segments):
         self.file = image_file
@@ -62,7 +71,7 @@ class ImageInfo:
 
         # fields loading
         self.fields = {}
-        tags = piexif.load(self.file)
+        tags = load_exiv2_data(self.file)
 
         for field in FIELD_TAGS.keys():
             self.fields[field] = FIELD_TAGS[field](tags)
@@ -234,50 +243,6 @@ Summary =======================================
     print('Done.')
 
 
-def inspect():
-    def inspect_file(file):
-        def _p(text):
-            if not args.filter:
-                print(text)
-
-        print("file %s %s" % (file, "-" * 30))
-        tags = piexif.load(file)
-        for k, v in tags.items():
-            if type(v) == bytes:
-                _p("   Area %s: binary" % k)
-            elif v is None:
-                _p("   Area %s: empty" % k)
-            else:
-                _p("   Area %s" % k)
-
-                tags_ref = piexif.TAGS[k]
-                for k2, v2 in v.items():
-
-                    if args.filter:
-                        found = False
-                        for f in args.filter:
-                            # print("f: %s ---> k: %s" % (f.lower(), k2.lower()))
-                            if f.lower() in tags_ref[k2]['name'].lower():
-                                found = True
-                                break
-
-                        if not found:
-                            continue
-
-                    vtype = 'binary?' if len(str(v2)) > 100 else v2
-                    if k2 in tags_ref:
-                        print("      %s.%s: %s" % (k, tags_ref[k2]['name'], vtype))
-                    else:
-                        print("      %s: %s" % (k2, vtype))
-
-    if args.recursive:
-        for root, dirs, files in os.walk(args.target):
-            [inspect_file(image_file) for image_file in find_images(root)]
-
-    else:
-        [inspect_file(image_file) for image_file in find_images(args.target)]
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
@@ -299,12 +264,6 @@ if __name__ == '__main__':
     rename_parser.add_argument("--short-date-format", action='store_true',
                                help="Force to use creation date with no subsec time ")
     __add_std_options(rename_parser)
-
-    inspect_parser = subparsers.add_parser("inspect", help="Inspect RAW files")
-    inspect_parser.set_defaults(command="inspect")
-    inspect_parser.add_argument("target", help="File or directory to process")
-    inspect_parser.add_argument("--filter", nargs="+", help="Tags to be filtered")
-    __add_std_options(inspect_parser)
 
     args = parser.parse_args()
 
