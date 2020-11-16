@@ -471,7 +471,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    assert os.path.exists(args.csv_file)
+    assert os.path.exists(args.csv_file), "File %s doesn't exist" % args.csv_file
 
     # build up the list of columns to be processed
     columns = __build_int_list(args.columns)
