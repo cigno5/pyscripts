@@ -98,7 +98,9 @@ def export_transactions():
 
     with QIFOutput(file) as out:
         for transaction in transactions:
-            if transaction['transactionDate'] is None or transaction['description'] == '':
+            if transaction['transactionDate'] is None \
+                    or transaction['description'] == '' \
+                    or transaction['typeOfTransaction'] == 'A':
                 continue
 
             account = abnconv.find_account(transaction['accountNumber'])
