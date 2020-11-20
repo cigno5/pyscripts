@@ -153,39 +153,49 @@ def catalog2():
     exts = ['.' + e for e in args.ext.split(",")]
     forced_resize = args.force
 
+    sources = 0
+    skipped = 0
+    replaced = 0
+
     for root, folders, files in os.walk(source):
-        print('scan %s...' % root)
+        print('scanning %s...' % root)
         if os.path.basename(os.path.normpath(root))[0] == '.':
             continue
 
-        relative_root = root[len(source):]
+        target_root = os.path.join(target, root[len(source):])
+        print(' > target root: %s' % target_root)
         for file in [f for f in files if os.path.splitext(f)[1].lower() in exts]:
             source_picture = os.path.join(root, file)
-            target_picture = os.path.join(target, relative_root, file)
-            print('%s -> ' % source_picture, end='', flush=True)
+            target_picture = os.path.join(target_root, file)
+            print('%s -> ' % file, end='', flush=True)
+            sources += 1
 
             path, mtime = path_mtime()
             source_changed = path in index and index[path] != mtime
             target_exists = os.path.exists(target_picture)
 
-            print('%s -> ' % target_picture, end='', flush=True)
             if source_changed or forced_resize or not target_exists:
                 if target_exists:
-                    print('removing -> ', end='', flush=True)
                     os.remove(target_picture)
-                print("coying -> ", end='', flush=True)
+                    print('deleted, ', end='', flush=True)
+                    replaced += 1
                 os.makedirs(os.path.dirname(target_picture), exist_ok=True)
                 shutil.copyfile(source_picture, target_picture)
-                print('resizing -> ', end='', flush=True)
                 subprocess.call(["mogrify", "-resize", args.resize, target_picture])
-                print('completed.')
+                print('generated.')
             else:
                 print("skipped.")
+                skipped += 1
 
             index[os.path.abspath(source_picture)] = os.path.getmtime(source_picture)
 
     _write_catalog_index(index)
-    print("done")
+    print("""
+Catalog generation done
+    Found %d pictures
+    Skipped %d pictures
+    Generated %d pictures (%d replaced)
+""" % (sources, skipped, (sources - skipped), replaced))
 
 
 if __name__ == '__main__':
