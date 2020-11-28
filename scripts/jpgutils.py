@@ -141,6 +141,13 @@ def catalog2():
     def path_mtime():
         return os.path.abspath(source_picture), os.path.getmtime(source_picture)
 
+    def log(s, flush=False):
+        if args.verbose:
+            if flush:
+                print(s, end='', flush=True)
+            else:
+                print(s)
+
     source = os.path.expanduser(args.source)
     target = os.path.expanduser(args.target)
     assert os.path.exists(source), "Source folder doesn't exist"
@@ -157,17 +164,25 @@ def catalog2():
     skipped = 0
     replaced = 0
 
-    for root, folders, files in os.walk(source):
-        print('scanning %s...' % root)
+    source = source[:-1] if source[-1] == '/' else source
+    root_count = source.count('/')
+
+    for root, folders, files in os.walk(source, topdown=True):
+        folders.sort()
+        level = root.count('/') - root_count
+        _spacer = '  ' * level
+
         if os.path.basename(os.path.normpath(root))[0] == '.':
             continue
 
-        target_root = os.path.join(target, root[len(source):])
-        print(' > target root: %s' % target_root)
+        if level > 0:
+            log(_spacer + " - " + os.path.basename(root))
+
+        target_root = os.path.join(target, root[len(source) + 1:])
         for file in [f for f in files if os.path.splitext(f)[1].lower() in exts]:
             source_picture = os.path.join(root, file)
             target_picture = os.path.join(target_root, file)
-            print('%s -> ' % file, end='', flush=True)
+            log('%s  -  %s -> ' % (_spacer, file), True)
             sources += 1
 
             path, mtime = path_mtime()
@@ -175,16 +190,20 @@ def catalog2():
             target_exists = os.path.exists(target_picture)
 
             if source_changed or forced_resize or not target_exists:
+                repl = False
                 if target_exists:
                     os.remove(target_picture)
-                    print('deleted, ', end='', flush=True)
                     replaced += 1
+                    repl = True
                 os.makedirs(os.path.dirname(target_picture), exist_ok=True)
                 shutil.copyfile(source_picture, target_picture)
                 subprocess.call(["mogrify", "-resize", args.resize, target_picture])
-                print('generated.')
+                if repl:
+                    log("replaced.")
+                else:
+                    log('generated.')
             else:
-                print("skipped.")
+                log("skipped.")
                 skipped += 1
 
             index[os.path.abspath(source_picture)] = os.path.getmtime(source_picture)
@@ -192,10 +211,12 @@ def catalog2():
     _write_catalog_index(index)
     print("""
 Catalog generation done
+    Source folder: %s
+    Target folder: %s    
     Found %d pictures
     Skipped %d pictures
     Generated %d pictures (%d replaced)
-""" % (sources, skipped, (sources - skipped), replaced))
+""" % (source, target, sources, skipped, (sources - skipped), replaced))
 
 
 if __name__ == '__main__':
@@ -231,6 +252,8 @@ if __name__ == '__main__':
                                  help="Extensions valid to be copied, separated by comma")
     catalog_parser2.add_argument("--force", action='store_true',
                                  help='Force resized file to be overridden')
+    catalog_parser2.add_argument('-v', "--verbose", action='store_true',
+                                 help='Log all files encountered')
 
     pshowcase_parser = subparsers.add_parser("permanent-showcase", help="Create permanent showcase")
     pshowcase_parser.set_defaults(command="permanent_showcase")
