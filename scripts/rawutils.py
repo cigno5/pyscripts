@@ -146,6 +146,95 @@ class Counters:
         return nc
 
 
+def unprocessed():
+
+    class Proc:
+        def __init__(self, filename):
+            def is_sidecar():
+                for sext in args.sidecar_file:
+                    if _ext.endswith(sext):
+                        return True
+
+            _name, _ext = split_filename(filename)
+            _ext = (_ext[1:] if _ext else _ext).lower()
+
+            self.key = _name
+            self.images = []
+            self.sidecars = []
+            self.accessories = []
+
+            if _ext in IMAGE_EXTS:
+                self.images.append(_ext)
+            elif is_sidecar():
+                self.sidecars.append(_ext)
+            else:
+                self.accessories.append(_ext)
+
+        def append(self, _proc):
+            assert self.key == _proc.key
+            self.images += _proc.images
+            self.sidecars += _proc.sidecars
+            self.accessories += _proc.accessories
+
+        def is_unprocessed(self):
+            return len(self.images) > 0 and len(self.sidecars) == 0
+
+        def is_orphan(self):
+            return len(self.images) == 0 and len(self.sidecars) > 0
+
+        def is_not_ok(self):
+            return self.is_orphan() or self.is_unprocessed()
+
+        def __str__(self):
+            exts = self.images if self.is_unprocessed() else self.sidecars
+
+            return "{base}.{ext} ({problem}{accessories}".format(
+                base=self.key,
+                ext=exts[0] if len(exts) == 1 else str(exts),
+                problem="unprocessed" if self.is_unprocessed() else "orphan",
+                accessories=" accessories: " + str(self.accessories) + ')' if self.accessories else ")"
+            )
+
+    include_re = re.compile(args.include, re.IGNORECASE) if args.include else None
+
+    for root, folders, files in os.walk(args.target, topdown=True):
+        folders.sort()
+        # filter if include is specified
+        if include_re and not include_re.search(root):
+            continue
+
+        f_map = dict()
+        for f in files:
+            proc = Proc(f)
+            if proc.key in f_map:
+                f_map[proc.key].append(proc)
+            else:
+                f_map[proc.key] = proc
+
+        not_processed_images = list()
+        found = processed = orphans = not_processed = 0
+
+        for name, proc in f_map.items():
+            found += 1
+            if proc.is_unprocessed():
+                not_processed += 1
+            elif proc.is_orphan():
+                orphans += 1
+            else:
+                processed += 1
+
+            if proc.is_not_ok():
+                not_processed_images.append(proc)
+
+        if not_processed_images:
+            print("- %s: (%d found, %d processed, %d unprocessed, %d orphans)"
+                  % (root, found, processed, not_processed, orphans))
+
+            if args.list_files:
+                for proc in sorted(not_processed_images, key=lambda p: p.key):
+                    print("  - %s " % proc)
+
+
 def rename():
     _s = 0
     name_segments = list()
@@ -246,6 +335,7 @@ Summary =======================================
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
+
     def __add_std_options(_parser):
         _parser.add_argument("-r", "--recursive", action="store_true", help="Check recursively in sub folders")
         _parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
@@ -264,6 +354,13 @@ if __name__ == '__main__':
     rename_parser.add_argument("--short-date-format", action='store_true',
                                help="Force to use creation date with no subsec time ")
     __add_std_options(rename_parser)
+
+    unprocessed_parser = subparsers.add_parser("unproc", help="Search in folders for files with no sidecar file")
+    unprocessed_parser.set_defaults(command="unprocessed")
+    unprocessed_parser.add_argument("target", help="File or directory to search in")
+    unprocessed_parser.add_argument('-f', "--sidecar-file", nargs='+', default=['xmp'])
+    unprocessed_parser.add_argument('-l', "--list-files", action='store_true', help="Print file list per each folder")
+    unprocessed_parser.add_argument('-i', "--include", help="Filter to include folder (regexp)")
 
     args = parser.parse_args()
 
