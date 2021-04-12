@@ -68,7 +68,7 @@ class XlsDataReader(DataReader):
     def __init__(self, file, sheet_num):
         super().__init__()
 
-        self.xls_source = load_workbook(file, read_only=True)
+        self.xls_source = load_workbook(file, read_only=True, data_only=args.data_only)
         sheet = self.xls_source[self.xls_source.sheetnames[sheet_num]]
 
         self.__rows = sheet.rows
@@ -132,7 +132,7 @@ class CsvDataReader(DataReader):
 
 class ColMetadata:
     def __init__(self, name, idx):
-        self.name = name
+        self.name = name.replace('\n', ' ') if name else name
         self.idx = idx
         self.first_value = None
         self.max_size = None
@@ -476,6 +476,7 @@ if __name__ == '__main__':
 
     xls_options_grp = parser.add_argument_group("XLS Options")
     xls_options_grp.add_argument("--sheet-num", default=1, type=int, help="The excel's sheet number")
+    xls_options_grp.add_argument("--data-only", default=False, action='store_true', help="Doesn't load formulas")
 
     args = parser.parse_args()
 
