@@ -378,11 +378,17 @@ def print_table(table):
 def new_reader():
     _ext = os.path.splitext(args.csv_file)[1][1:].lower()
     if _ext in ['csv', 'txt']:
-        return CsvDataReader(args.csv_file, args.delimiter, args.quote_char)
-    elif _ext in ['xls', 'xlsx']:
-        return XlsDataReader(args.csv_file, args.sheet_num - 1)
+        _reader = CsvDataReader(args.csv_file, args.delimiter, args.quote_char)
+    elif _ext in ['xls', 'xlsx', 'xlsm']:
+        _reader = XlsDataReader(args.csv_file, args.sheet_num - 1)
     else:
         raise ValueError('file %s is not valid' % args.csv_file)
+
+    # skip rows
+    for _ in range(0, args.skip_rows):
+        next(_reader)
+
+    return _reader
 
 
 def __build_int_list(_ints):
@@ -454,6 +460,8 @@ if __name__ == '__main__':
                                              "")
     processing_options_grp.add_argument("--limit", type=int, help="Limit the number of rows to be taken in evaluation")
     processing_options_grp.add_argument("--progress", action='store_true', help="Show processing progress")
+    processing_options_grp.add_argument("--skip-rows", default=0, type=int,
+                                        help="Define how many rows to be skipped before considering the file as started")
 
     output_options_grp = parser.add_argument_group("Output options")
     output_options_grp.add_argument("--format", choices=["csv", "human"], default="human", help="Output format")
