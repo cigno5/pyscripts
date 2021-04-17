@@ -4,6 +4,7 @@ import configparser
 import getpass
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -83,7 +84,8 @@ class Task:
             self.tags = None
 
     def get_contents(self, mount_point):
-        for sub_folder in self.sub_folders:
+        content_filter = re.compile(args.content if args.content else '.*')
+        for sub_folder in (f for f in self.sub_folders if content_filter.search(f)):
             destination = sub_folder[1:] if len(sub_folder) > 0 and sub_folder[0] == '.' else sub_folder
             yield (os.path.join(self.local_root, sub_folder), os.path.join(mount_point, self.remote_root, destination))
 
@@ -279,7 +281,9 @@ if __name__ == '__main__':
         bkp_parser.add_argument('--force', action='store_true', help='Force backup of disabled tasks')
         bkp_parser.add_argument('--avoid-delete', action='store_true', help="Don't use '--delete' rsync option")
         bkp_parser.add_argument('--folder', nargs='*',
-                                help='Folder filter (starting from the root with no leading slash')
+                                help='Folder filter (starting from the root with no leading slash) for rsync')
+        bkp_parser.add_argument('--content',
+                                help='Content filter (regexp) for selecting sub-folders')
         bkp_parser.add_argument('tasks', nargs='*', help='Tasks to be backupped (or empty for all active tasks)')
 
     show_parser = sub_parsers.add_parser("show", help="Show useful information")
