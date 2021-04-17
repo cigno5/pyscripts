@@ -179,7 +179,7 @@ def catalog2():
             log(_spacer + " - " + os.path.basename(root))
 
         target_root = os.path.join(target, root[len(source) + 1:])
-        for file in [f for f in files if os.path.splitext(f)[1].lower() in exts]:
+        for file in sorted([f for f in files if os.path.splitext(f)[1].lower() in exts]):
             source_picture = os.path.join(root, file)
             target_picture = os.path.join(target_root, file)
             log('%s  -  %s -> ' % (_spacer, file), True)
