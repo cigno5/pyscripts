@@ -16,7 +16,7 @@ Account = collections.namedtuple('Account', 'iban,name,ics_account,ics_debit_iba
 
 ns = {'xmlns': "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"}
 
-BEA_re = re.compile("(?P<subtype>[GB])EA.+(\d{2}.){4}\d{2}(?P<payee>.+),PAS(\d+)")
+BEA_re = re.compile("(?P<subtype>[GB])EA, Betaalpas\s+(?P<payee>.+),(?P<pas>PAS\d+)\s+(?P<code>NR:[\w\d]+)\s+(?P<datetime>[\d\.]{8}\/[\d\.]{5})\s+(?P<place>.+)")
 
 SEPA_re = re.compile("/(TRTP|RTYP)/.+")
 SEPA_markers_re = re.compile("/(TRTP|RTYP|CSID|NAME|MARF|REMI|IBAN|BIC|EREF)/")
