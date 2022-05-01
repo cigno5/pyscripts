@@ -45,26 +45,38 @@ class Mount:
     def __mount_parameters(self):
         source_settings = config['source']
         if _is_cifs_mount():
-            return ["-t", "cifs",
-                    "//%s%s" % (source_settings.get('server'), source_settings.get('base_folder')),
-                    self.mount_point.__str__(),
-                    '-o', 'uid=%d' % os.getuid(),
-                    '-o', 'gid=%d' % os.getgid(),
-                    '-o', 'username=%s,noexec' % source_settings.get('user'),
-                    '-o', 'password=%s' % source_settings.get('password')]
+            __params = ["-t", "cifs",
+                        "//%s%s" % (source_settings.get('server'), source_settings.get('base_folder')),
+                        self.mount_point.__str__(),
+                        '-o', 'uid=%d' % os.getuid(),
+                        '-o', 'gid=%d' % os.getgid(),
+                        '-o', 'username=%s,noexec' % source_settings.get('user'),
+                        '-o', 'password=%s' % source_settings.get('password')]
+
         elif _is_nfs_mount():
-            return ["-t", "nfs",
-                    "%s:%s" % (source_settings.get('server'), source_settings.get('base_folder')),
-                    self.mount_point.__str__()
-                    ]
+            __params = ["-t", "nfs",
+                        "%s:%s" % (source_settings.get('server'), source_settings.get('base_folder')),
+                        self.mount_point.__str__()
+                        ]
         else:
             raise ValueError("Mount type '%s' not valid" % source_settings['mount_type'])
+
+        # mount options
+        _mnt_opts = config['source']['mount_options']
+        if _mnt_opts:
+            _mnt_opts = _mnt_opts if isinstance(_mnt_opts, list) else [_mnt_opts]
+            for o in _mnt_opts:
+                __params.append('-o')
+                __params.append(o)
+
+        return __params
 
 
 class Task:
     """
     Represent task configuration, performs checks and prepare values
     """
+
     def __init__(self, task_conf):
         def __extract_path(key):
             path = task_conf[key]
@@ -274,7 +286,8 @@ if __name__ == '__main__':
 
     sub_parsers = parser.add_subparsers()
 
-    for __cmd, __help in [("backup", "Execute the backup of the tasks"), ("restore", "Execute the restore from backup")]:
+    for __cmd, __help in [("backup", "Execute the backup of the tasks"),
+                          ("restore", "Execute the restore from backup")]:
         bkp_parser = sub_parsers.add_parser(__cmd, help=__help)
         bkp_parser.set_defaults(command=__cmd)
         bkp_parser.add_argument('--dry-run', action='store_true', help='Do not synchronize anything')
