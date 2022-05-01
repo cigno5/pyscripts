@@ -156,14 +156,13 @@ def unprocessed():
                         return True
 
             _name, _ext = split_filename(filename)
-            _ext = (_ext[1:] if _ext else _ext).lower()
 
             self.key = _name
             self.images = []
             self.sidecars = []
             self.accessories = []
 
-            if _ext in IMAGE_EXTS:
+            if (_ext[1:] if _ext else _ext).lower() in IMAGE_EXTS:
                 self.images.append(_ext)
             elif is_sidecar():
                 self.sidecars.append(_ext)
@@ -188,7 +187,7 @@ def unprocessed():
         def __str__(self):
             exts = self.images if self.is_unprocessed() else self.sidecars
 
-            return "{base}.{ext} ({problem}{accessories}".format(
+            return "{base}{ext} ({problem}{accessories}".format(
                 base=self.key,
                 ext=exts[0] if len(exts) == 1 else str(exts),
                 problem="unprocessed" if self.is_unprocessed() else "orphan",
