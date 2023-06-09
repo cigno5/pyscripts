@@ -18,8 +18,9 @@ ns = {'xmlns': "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"}
 
 BEA_re = re.compile("(?P<subtype>[GB])EA, (Betaalpas|Google Pay)\s+(?P<payee>.+),(?P<pas>PAS\d+)\s+(?P<code>NR:[\w\d]+),?\s+(?P<datetime>[\d\.]{8}\/[\d\.:]{5})\s+(?P<place>.+)")
 
-SEPA_re = re.compile("/(TRTP|RTYP)/.+")
-SEPA_markers_re = re.compile("/(TRTP|RTYP|CSID|NAME|MARF|REMI|IBAN|BIC|EREF)/")
+SEPA_re = re.compile("(/(TRTP|RTYP)/|^SEPA).+")
+SEPA_markers_re = re.compile("/(?P<field>\w+)/(?P<value>.+?)(?=(/|$))")
+SEPA_markers2_re = re.compile("(?P<field>\w+):\s(?P<value>.+?)(?=(\s+\w+:|$))")
 
 ABN_re = re.compile("(?P<payee>ABN AMRO Bank N.V.)\s+(?P<memo>\w+).+")
 
@@ -62,6 +63,7 @@ class Trsx:
         self.amount = None
         self.payee = None
         self.memo = None
+        self.kenmerk = None
 
     def __eq__(self, other):
         if type(other) == Trsx:
@@ -71,25 +73,28 @@ class Trsx:
                    and self.date == other.date \
                    and self.amount == other.amount \
                    and self.payee == other.payee \
-                   and self.memo == other.memo
+                   and self.memo == other.memo \
+                   and self.kenmerk == other.kenmerk
         else:
             return False
 
     def __hash__(self):
-        return hash("%s-%s-%s-%s/%s" %
+        return hash("%s-%s-%s-%s-%s/%s" %
                     (self.source_iban,
                      self.dest_iban,
                      self.date.strftime("%Y%m%d"),
                      str(self.amount),
+                     self.kenmerk,
                      self.memo))
 
     def __str__(self):
-        return "{dt}: {src} -> {dst} {amt} ({pay}: {memo})".format(dt=self.date.strftime("%d/%m/%Y"),
-                                                                   src=self.source_iban,
-                                                                   dst=self.dest_iban,
-                                                                   amt=self.amount,
-                                                                   pay=self.payee,
-                                                                   memo=self.memo)
+        return "{dt}: {src} -> {dst} {amt} ({pay}: {memo} {kenmerk})".format(dt=self.date.strftime("%d/%m/%Y"),
+                                                                             src=self.source_iban,
+                                                                             dst=self.dest_iban,
+                                                                             amt=self.amount,
+                                                                             pay=self.payee,
+                                                                             memo=self.memo,
+                                                                             kenmerk=self.kenmerk)
 
     def is_transfer_transaction(self):
         return self.dest_iban in accounts
@@ -105,6 +110,7 @@ class Trsx:
         compl.amount = self.amount * -1
         compl.payee = self.payee
         compl.memo = self.memo
+        compl.kenmerk = self.kenmerk
         return compl
 
     def get_qif_tx(self):
@@ -116,7 +122,7 @@ class Trsx:
             'date': self.date.strftime("%Y/%m/%d"),
             'amount': self.amount,
             'payee': nn(self.payee),
-            'memo': nn(self.memo),
+            'memo': "{0}{1}".format(nn(self.memo), (' (' + self.kenmerk + ')' if self.kenmerk else '')),
             'ledger': '',
         }
 
@@ -134,14 +140,15 @@ def _get_account_name(iban):
 
 
 def process_entry(account_iban, elem):
-    def find_sepa_field(field):
+    def find_sepa_field(field, field_mk2):
         if SEPA_re.search(transaction_info):
-            start = None
-            for marker_match in SEPA_markers_re.finditer(transaction_info):
-                if marker_match.group(1) == field:
-                    start = marker_match.end(0)
-                elif start:
-                    return transaction_info[start:marker_match.start(0)]
+            fields = {x[0]: x[1]
+                      for x in
+                      SEPA_markers_re.findall(transaction_info) + SEPA_markers2_re.findall(transaction_info)}
+            if field in fields:
+                return fields.get(field)
+            elif field_mk2 in fields:
+                return fields.get(field_mk2)
 
         return None
 
@@ -168,12 +175,15 @@ def process_entry(account_iban, elem):
         tsx.type = 'Bank' if match.group("subtype") == 'B' else 'Cash'
         tsx.payee = match.group("payee")
         tsx.memo = transaction_info
+        _xxx = elem.find("xmlns:AcctSvcrRef", namespaces=ns)
+        tsx.kenmerk = _xxx.text if _xxx else None
 
     elif tx_type == 'sepa':
         tsx.type = 'Bank'
-        tsx.payee = find_sepa_field('NAME')
-        tsx.memo = find_sepa_field("REMI")
-        tsx.dest_iban = find_sepa_field('IBAN')
+        tsx.payee = find_sepa_field('NAME', 'Naam')
+        tsx.memo = find_sepa_field("REMI", 'Omschrijving')
+        tsx.kenmerk = find_sepa_field('MARF', 'Kenmerk')
+        tsx.dest_iban = find_sepa_field('IBAN', 'IBAN')
 
     elif tx_type == 'tikkie':
         tsx.type = 'Bank'
@@ -221,7 +231,7 @@ def _trsx_list(file):
             trsx = process_entry(account_iban, elem)
             if trsx:
                 yield trsx
-                # complementary transaction is not needed anymore, homeback is able to spot it by its own
+                # complementary transaction is not needed anymore, homebank is able to spot it by its own
                 # if trsx.is_transfer_transaction():
                 #     yield trsx.complementary()
     else:
