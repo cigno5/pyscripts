@@ -52,9 +52,14 @@ def extract_transactions():
 
 
 def read_transactions():
+    all_lines = ''
     for line in sys.stdin:
-        account_transactions = json.loads(line)
-        break
+        if line == 'end\n':
+            break
+        else:
+            all_lines += line
+
+    account_transactions = json.loads(all_lines)
 
     all_transactions = list()
     for account_transaction in account_transactions:
@@ -144,7 +149,7 @@ if __name__ == '__main__':
     username, password, from_date, to_date, file = load_settings()
 
     if args.read:
-        print("Read transactions from stdin")
+        print("Read transactions from stdin, to close type 'end' and hit enter")
         transactions = read_transactions()
     else:
         print("Extract transactions from %s to %a" % (from_date.strftime("%d/%m/%Y"), to_date.strftime("%d/%m/%Y")))
