@@ -6,3 +6,4 @@ stravalib
 sh
 Pillow
 piexif
+clipboard
