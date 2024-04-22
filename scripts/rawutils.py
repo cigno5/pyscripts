@@ -5,7 +5,7 @@ import re
 import subprocess
 from datetime import datetime, timedelta
 
-IMAGE_EXTS = ["cr2", "jpg", "3fr", "raf"]
+IMAGE_EXTS = ["cr2", "cr3", "jpg", "3fr", "raf"]
 EXIF_TAGS_RE = re.compile("^(?P<tag>Exif\.[\w\.]+)\s+(?P<type>\w+)\s+(?P<size>\d+)\s+(?P<value>.+)$")
 
 ExifTag = collections.namedtuple('ExifTag', 'tag, type, size, value')
