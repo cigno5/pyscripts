@@ -37,8 +37,14 @@ def download_file(url):
 
             print(f"Downloading {file_name} ({file_size} bytes)...")
             with open(output_file, 'wb') as f:
-                response = requests.get(url)
-                f.write(response.content)
+                response = requests.get(url, stream=True)
+                downloaded_bytes = 0
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded_bytes += len(chunk)
+                        progress = int((downloaded_bytes / file_size) * 100)
+                        print(f"\rProgress: {progress}%   ", end='', flush=True)
             print(f"{file_name} downloaded")
         else:
             print(f"Skipping {url} as it doesn't meet size criteria")
