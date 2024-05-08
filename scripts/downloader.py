@@ -4,7 +4,6 @@ Downloader using clipboard listener
 Things to implement
 - clear list with key press
 - sort downloads first
-- move file to be visible at the end
 - don't download twice a file already downloaded
 """
 import argparse
@@ -26,6 +25,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
 
 downloads = []
+fn_re = re.compile(r"(?i)filename=(?P<fn>.+)[\s$]?")
 
 
 class DStatus(Enum):
@@ -36,7 +36,7 @@ class DStatus(Enum):
     Error = 5
 
 
-Meta = collections.namedtuple('Meta', 'id,status,size,downloaded,progress,url')
+Meta = collections.namedtuple('Meta', 'id,status,size,downloaded,progress,filename')
 
 
 def _log(*xargs):
@@ -50,6 +50,7 @@ class Download:
         self.url = url
         self.downloaded_bytes = 0
         self.file_size = 0
+        self.file_name = ""
         self.status = DStatus.Queued
 
     def perform_download(self):
@@ -57,22 +58,35 @@ class Download:
         try:
             response = requests.head(url)
             self.file_size = int(response.headers.get('content-length', 0))
-            if self.file_size >= min_size:
-                file_name = url.split('/')[-1]
 
-                if args.prefix_time:
-                    output_file = os.path.join(output_dir,
-                                               datetime.now().strftime("%Y-%m-%dT%H.%M.%S") + ' - ' + file_name)
-                else:
-                    output_file = os.path.join(output_dir, file_name)
+            _fn = response.headers.get('Content-Disposition', None)
+            if _fn:
+                _m = fn_re.search(_fn)
+                if _m:
+                    _fn = _m.group(1)
+            else:
+                _fn = url.split('/')[-1]
+            self.file_name = _fn
+            print(self.file_name)
+
+            if self.file_size >= min_size:
+                _file_name = datetime.now().strftime("%Y%m%dT%H%M%S_") + self.file_name \
+                    if args.prefix_time \
+                    else self.file_name
+
+                _tmp_file_name = f".{_file_name}"
+
+                tmp_output_file = os.path.join(output_dir, _tmp_file_name)
+                output_file = os.path.join(output_dir, _file_name)
 
                 self.status = DStatus.Downloading
-                with open(output_file, 'wb') as f:
+                with open(tmp_output_file, 'wb') as f:
                     response = requests.get(url, stream=True)
                     for chunk in response.iter_content(chunk_size=1024):
                         if chunk:
                             f.write(chunk)
                             self.downloaded_bytes += len(chunk)
+                os.rename(tmp_output_file, output_file)
                 self.status = DStatus.Completed
             else:
                 self.status = DStatus.Skipped
@@ -87,7 +101,7 @@ class Download:
                     self.file_size,
                     self.downloaded_bytes,
                     f"{progress}%",
-                    self.url)
+                    self.file_name)
 
 
 def _parse_size(str_size):
@@ -141,7 +155,7 @@ def download_monitor():
             print("\033c", end="", flush=True)
             print(tabulate.tabulate([Meta._fields] + [m.meta() for m in downloads]))
 
-        time.sleep(1)
+        time.sleep(5)
 
 
 def monitor_download():
