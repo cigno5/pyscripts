@@ -99,7 +99,7 @@ def load_settings():
 
 
 def export_transactions():
-    payee_re = re.compile("((www.)?[\w\.]+).+")
+    payee_re = re.compile(r"((www.)?[\w\.]+).+")
 
     with QIFOutput(file) as out:
         for transaction in transactions:
