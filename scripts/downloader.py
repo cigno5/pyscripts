@@ -25,6 +25,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
 
 downloads = []
+download_urls = set()
 fn_re = re.compile(r"(?i)filename=(?P<fn>.+)[\s$]?")
 
 
@@ -42,6 +43,15 @@ Meta = collections.namedtuple('Meta', 'id,status,size,downloaded,progress,filena
 def _log(*xargs):
     if args.verbose:
         print(*xargs)
+
+
+def _file_size(size_in_bytes):
+    units = ['b', 'KB', 'MB', 'GB', 'TB']
+    unit_index = 0
+    while size_in_bytes >= 1024 and unit_index < len(units) - 1:
+        size_in_bytes /= 1024.0
+        unit_index += 1
+    return f"{size_in_bytes:.1f} {units[unit_index]}"
 
 
 class Download:
@@ -98,8 +108,8 @@ class Download:
         progress = int((self.downloaded_bytes / self.file_size) * 100) if self.file_size > 0 else 0
         return Meta(self.id,
                     self.status.name,
-                    self.file_size,
-                    self.downloaded_bytes,
+                    _file_size(self.file_size),
+                    _file_size(self.downloaded_bytes),
                     f"{progress}%",
                     self.file_name)
 
@@ -145,6 +155,7 @@ def _parse_size(str_size):
 
 def download_generator(url):
     d = Download(url)
+    download_urls.add(url)
     downloads.append(d)
     return (d.perform_download,)
 
@@ -171,8 +182,9 @@ def monitor_download():
             if request_text:
                 _log("Request text: %s" % request_text)
                 for url_match in urls_finder.finditer(request_text):
-                    # executor.submit(download, url_match.group(0))
-                    executor.submit(*download_generator(url_match.group(0)))
+                    url = url_match.group(0)
+                    if url not in download_urls:
+                        executor.submit(*download_generator(url))
             else:
                 _log("Not a text request")
 
