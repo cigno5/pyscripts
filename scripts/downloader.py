@@ -164,6 +164,18 @@ def download_monitor():
     while True:
         if len(downloads) > 0:
             print("\033c", end="", flush=True)
+            cd = 0
+            ce = 0
+            cq = 0
+            for d in downloads:
+                if d.status == DStatus.Downloading:
+                    cd += 1
+                elif d.status == DStatus.Error:
+                    ce += 1
+                elif d.status == DStatus.Queued:
+                    cq += 1
+
+            print("D: %d, Q: %d, E: %d" % (cd, cq, ce))
             print(tabulate.tabulate([Meta._fields] + [m.meta() for m in downloads]))
 
         time.sleep(5)
