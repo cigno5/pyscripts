@@ -30,10 +30,10 @@ fn_re = re.compile(r"(?i)filename=(?P<fn>.+)[\s$]?")
 
 
 class DStatus(Enum):
-    Queued = 1
-    Skipped = 2
-    Downloading = 3
-    Completed = 4
+    Downloading = 1
+    Queued = 2
+    Completed = 3
+    Skipped = 4
     Error = 5
 
 
@@ -60,10 +60,22 @@ class Download:
         self.url = url
         self.downloaded_bytes = 0
         self.file_size = 0
+        self.progress = 0
         self.file_name = ""
         self.status = DStatus.Queued
+        self.queue_time = datetime.now()
+        self.start_time = None
+        self.end_time = None
 
     def perform_download(self):
+        def update_progress(chunk_length):
+            self.downloaded_bytes += chunk_length
+            if self.file_size > 0:
+                self.progress = int((self.downloaded_bytes / self.file_size) * 100)
+            else:
+                self.progress = 0
+
+        self.start_time = datetime.now()
         url = self.url
         try:
             response = requests.head(url)
@@ -95,7 +107,8 @@ class Download:
                     for chunk in response.iter_content(chunk_size=1024):
                         if chunk:
                             f.write(chunk)
-                            self.downloaded_bytes += len(chunk)
+                            update_progress(len(chunk))
+
                 os.rename(tmp_output_file, output_file)
                 self.status = DStatus.Completed
             else:
@@ -103,15 +116,23 @@ class Download:
         except Exception as e:
             _log(f"Error downloading {url}: {e}")
             self.status = DStatus.Error
+        finally:
+            self.end_time = datetime.now()
 
     def meta(self):
-        progress = int((self.downloaded_bytes / self.file_size) * 100) if self.file_size > 0 else 0
         return Meta(self.id,
                     self.status.name,
                     _file_size(self.file_size),
                     _file_size(self.downloaded_bytes),
-                    f"{progress}%",
+                    f"{self.progress}%",
                     self.file_name)
+
+    def sort_keys(self):
+        return (self.status.value,
+                100 - self.progress,
+                self.end_time.timestamp() if self.end_time else 0,
+                self.start_time.timestamp() if self.start_time else 0,
+                self.queue_time.timestamp())
 
 
 def _parse_size(str_size):
@@ -176,7 +197,9 @@ def download_monitor():
                     cq += 1
 
             print("D: %d, Q: %d, E: %d" % (cd, cq, ce))
-            print(tabulate.tabulate([Meta._fields] + [m.meta() for m in downloads]))
+            print(tabulate.tabulate(
+                [Meta._fields]
+                + [m.meta() for m in sorted(downloads, key=lambda x: x.sort_keys())]))
 
         time.sleep(5)
 
