@@ -85,8 +85,9 @@ class Download:
             self.start_time = datetime.now()
             self.downloaded_bytes = 0
             url = self.url
+            session = requests.session()
             try:
-                response = requests.head(url)
+                response = session.head(url)
                 self.file_size = int(response.headers.get('content-length', 0))
 
                 _fn = response.headers.get('Content-Disposition', None)
@@ -111,7 +112,7 @@ class Download:
 
                     self.status = DStatus.Downloading
                     with open(tmp_output_file, 'wb') as f:
-                        response = requests.get(url, stream=True)
+                        response = session.get(url, stream=True)
                         for chunk in response.iter_content(chunk_size=1024):
                             if chunk:
                                 f.write(chunk)
@@ -130,6 +131,7 @@ class Download:
                 self.error_text = f"{type(e)} - {e}"
             finally:
                 self.end_time = datetime.now()
+                session.close()
 
         if self.status == DStatus.Error:
             with open(os.path.join(output_dir, f"Errors.urls"), 'a') as f:
