@@ -20,6 +20,7 @@ import tabulate
 import clipboard
 import gi
 import requests
+from requests.exceptions import ChunkedEncodingError
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
@@ -27,6 +28,7 @@ from gi.repository import Gtk, Gdk
 downloads = []
 download_urls = set()
 fn_re = re.compile(r"(?i)filename=(?P<fn>.+)[\s$]?")
+max_retries = 5
 
 
 class DStatus(Enum):
@@ -37,7 +39,7 @@ class DStatus(Enum):
     Error = 5
 
 
-Meta = collections.namedtuple('Meta', 'id,status,size,downloaded,progress,filename')
+Meta = collections.namedtuple('Meta', 'id,status,size,downloaded,progress,filename,attempts,error')
 
 
 def _log(*xargs):
@@ -66,6 +68,8 @@ class Download:
         self.queue_time = datetime.now()
         self.start_time = None
         self.end_time = None
+        self.error_text = None
+        self.attempts = 0
 
     def perform_download(self):
         def update_progress(chunk_length):
@@ -75,49 +79,61 @@ class Download:
             else:
                 self.progress = 0
 
-        self.start_time = datetime.now()
-        url = self.url
-        try:
-            response = requests.head(url)
-            self.file_size = int(response.headers.get('content-length', 0))
+        while self.attempts < max_retries:
+            self.attempts += 1
+            self.end_time = None
+            self.start_time = datetime.now()
+            self.downloaded_bytes = 0
+            url = self.url
+            try:
+                response = requests.head(url)
+                self.file_size = int(response.headers.get('content-length', 0))
 
-            _fn = response.headers.get('Content-Disposition', None)
-            if _fn:
-                _m = fn_re.search(_fn)
-                if _m:
-                    _fn = _m.group(1)
-            else:
-                _fn = url.split('/')[-1]
-            self.file_name = _fn
-            print(self.file_name)
+                _fn = response.headers.get('Content-Disposition', None)
+                if _fn:
+                    _m = fn_re.search(_fn)
+                    if _m:
+                        _fn = _m.group(1)
+                else:
+                    _fn = url.split('/')[-1]
+                self.file_name = _fn
+                print(self.file_name)
 
-            if self.file_size >= min_size:
-                _file_name = datetime.now().strftime("%Y%m%dT%H%M%S_") + self.file_name \
-                    if args.prefix_time \
-                    else self.file_name
+                if self.file_size >= min_size:
+                    _file_name = datetime.now().strftime("%Y%m%dT%H%M%S_") + self.file_name \
+                        if args.prefix_time \
+                        else self.file_name
 
-                _tmp_file_name = f".{_file_name}"
+                    _tmp_file_name = f".{_file_name}"
 
-                tmp_output_file = os.path.join(output_dir, _tmp_file_name)
-                output_file = os.path.join(output_dir, _file_name)
+                    tmp_output_file = os.path.join(output_dir, _tmp_file_name)
+                    output_file = os.path.join(output_dir, _file_name)
 
-                self.status = DStatus.Downloading
-                with open(tmp_output_file, 'wb') as f:
-                    response = requests.get(url, stream=True)
-                    for chunk in response.iter_content(chunk_size=1024):
-                        if chunk:
-                            f.write(chunk)
-                            update_progress(len(chunk))
+                    self.status = DStatus.Downloading
+                    with open(tmp_output_file, 'wb') as f:
+                        response = requests.get(url, stream=True)
+                        for chunk in response.iter_content(chunk_size=1024):
+                            if chunk:
+                                f.write(chunk)
+                                update_progress(len(chunk))
 
-                os.rename(tmp_output_file, output_file)
-                self.status = DStatus.Completed
-            else:
-                self.status = DStatus.Skipped
-        except Exception as e:
-            _log(f"Error downloading {url}: {e}")
-            self.status = DStatus.Error
-        finally:
-            self.end_time = datetime.now()
+                    os.rename(tmp_output_file, output_file)
+                    self.status = DStatus.Completed
+                    self.error_text = None
+                else:
+                    self.status = DStatus.Skipped
+
+                break # leave the retry attempts
+            except Exception as e:
+                _log(f"Error downloading {url}: {e}")
+                self.status = DStatus.Error
+                self.error_text = f"{type(e)} - {e}"
+            finally:
+                self.end_time = datetime.now()
+
+        if self.status == DStatus.Error:
+            with open(os.path.join(output_dir, f"Errors.urls"), 'a') as f:
+                f.write(f"{self.id}: {self.url}\n")
 
     def meta(self):
         return Meta(self.id,
@@ -125,7 +141,9 @@ class Download:
                     _file_size(self.file_size),
                     _file_size(self.downloaded_bytes),
                     f"{self.progress}%",
-                    self.file_name)
+                    self.file_name,
+                    self.attempts,
+                    self.error_text)
 
     def sort_keys(self):
         return (self.status.value,
