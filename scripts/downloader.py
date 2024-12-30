@@ -80,6 +80,7 @@ class Download:
                 self.progress = 0
 
         while self.attempts < max_retries:
+            time.sleep(self.attempts * 5)
             self.attempts += 1
             self.end_time = None
             self.start_time = datetime.now()
@@ -98,7 +99,6 @@ class Download:
                 else:
                     _fn = url.split('/')[-1]
                 self.file_name = _fn
-                print(self.file_name)
 
                 if self.file_size >= min_size:
                     _file_name = datetime.now().strftime("%Y%m%dT%H%M%S_") + self.file_name \
@@ -111,8 +111,18 @@ class Download:
                     output_file = os.path.join(output_dir, _file_name)
 
                     self.status = DStatus.Downloading
-                    with open(tmp_output_file, 'wb') as f:
-                        response = session.get(url, stream=True)
+
+                    if os.path.exists(tmp_output_file):
+                        file_mode = 'ab'
+                        size = os.stat(tmp_output_file).st_size
+                        resume_header = {'Range': 'bytes=%d-' % size}
+                        self.downloaded_bytes = size
+                    else:
+                        file_mode = 'wb'
+                        resume_header = {}
+
+                    with open(tmp_output_file, file_mode) as f:
+                        response = session.get(url, headers=resume_header, stream=True)
                         for chunk in response.iter_content(chunk_size=1024):
                             if chunk:
                                 f.write(chunk)
