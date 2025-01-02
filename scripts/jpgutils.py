@@ -142,7 +142,7 @@ def catalog2():
         return os.path.abspath(source_picture), os.path.getmtime(source_picture)
 
     def log(s, flush=False):
-        if args.verbose:
+        if not args.quiet:
             if flush:
                 print(s, end='', flush=True)
             else:
@@ -252,8 +252,8 @@ if __name__ == '__main__':
                                  help="Extensions valid to be copied, separated by comma")
     catalog_parser2.add_argument("--force", action='store_true',
                                  help='Force resized file to be overridden')
-    catalog_parser2.add_argument('-v', "--verbose", action='store_true',
-                                 help='Log all files encountered')
+    catalog_parser2.add_argument('-q', "--quiet", action='store_true',
+                                 help='Stop logging all files encountered')
 
     pshowcase_parser = subparsers.add_parser("permanent-showcase", help="Create permanent showcase")
     pshowcase_parser.set_defaults(command="permanent_showcase")
