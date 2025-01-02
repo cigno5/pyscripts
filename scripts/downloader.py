@@ -146,6 +146,7 @@ class Download:
         if self.status == DStatus.Error:
             with open(os.path.join(output_dir, f"Errors.urls"), 'a') as f:
                 f.write(f"{self.id}: {self.url}\n")
+            download_urls.remove(self.url)
 
     def meta(self):
         return Meta(self.id,
