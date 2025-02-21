@@ -22,6 +22,8 @@ import gi
 import requests
 from requests.exceptions import ChunkedEncodingError
 
+import curses
+
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
 
@@ -212,6 +214,25 @@ def download_generator(url):
     return (d.perform_download,)
 
 
+def handle_keypress(key):
+    # buf.append(key)
+    return key != 27
+
+
+def kb_monitor():
+    window = curses.initscr()
+    # curses.curs_set(0)
+    while True:
+        # key = window.getch()
+        # key = window.get_wch()
+        key = window.getkey()
+        # window.addstr(f'You pressed the "{key}" key!\n')
+        if key == 'q':
+            sys.exit(0)
+        if not handle_keypress(key):
+            break
+
+
 def download_monitor():
     while True:
         if len(downloads) > 0:
@@ -236,8 +257,9 @@ def download_monitor():
 
 
 def monitor_download():
-    with ThreadPoolExecutor(max_workers=args.workers) as executor, ThreadPoolExecutor(max_workers=1) as monitor:
+    with ThreadPoolExecutor(max_workers=args.workers) as executor, ThreadPoolExecutor(max_workers=2) as monitor:
         monitor.submit(download_monitor)
+        # monitor.submit(kb_monitor)
 
         # parser = RequestParser(executor)
         urls_finder = re.compile(
