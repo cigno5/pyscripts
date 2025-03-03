@@ -29,6 +29,7 @@ downloads = []
 download_urls = set()
 fn_re = re.compile(r"(?i)filename=(?P<fn>.+)[\s$]?")
 max_retries = 5
+LINE = re.compile(r"^(?P<action>\w):::(?P<url>http://.+):::(?P<file>\w+)$")
 
 
 class DStatus(Enum):
@@ -54,6 +55,26 @@ def _file_size(size_in_bytes):
         size_in_bytes /= 1024.0
         unit_index += 1
     return f"{size_in_bytes:.1f} {units[unit_index]}"
+
+
+class Control:
+
+    def __init__(self, ctl_file):
+        self.file = ctl_file
+        self.downloads = self.saved = self.errors = {}
+        with open(self.file, 'r') as c:
+            for line in c.readlines():
+                match = LINE.search(line)
+                if not match:
+                    raise ValueError(f"Line '{line}' is not a valid control line")
+                act = match.group('action')
+                url = match.group('url')
+                file = match.group('file')
+
+                assert act in ['s', 'd', 'e'], f"Acton {act} is not valid action"
+
+                d = self.saved if act == 's' else self.downloads if act == 'd' else self.errors
+                d[url] = file
 
 
 class Download:
@@ -176,35 +197,6 @@ def _parse_size(str_size):
         raise ValueError("Not valid format for size '%s'" % str_size)
 
 
-# def download_file(url):
-#     try:
-#         response = requests.head(url)
-#         file_size = int(response.headers.get('content-length', 0))
-#         if file_size >= min_size:
-#             file_name = url.split('/')[-1]
-#
-#             if args.prefix_time:
-#                 output_file = os.path.join(output_dir, datetime.now().strftime("%Y-%m-%dT%H.%M.%S") + ' - ' + file_name)
-#             else:
-#                 output_file = os.path.join(output_dir, file_name)
-#
-#             print(f"Downloading {file_name} ({file_size} bytes)...")
-#             with open(output_file, 'wb') as f:
-#                 response = requests.get(url, stream=True)
-#                 downloaded_bytes = 0
-#                 for chunk in response.iter_content(chunk_size=1024):
-#                     if chunk:
-#                         f.write(chunk)
-#                         downloaded_bytes += len(chunk)
-#                         progress = int((downloaded_bytes / file_size) * 100)
-#                         print(f"\rProgress: {progress}%   ", end='', flush=True)
-#             print(f"{file_name} downloaded")
-#         else:
-#             print(f"Skipping {url} as it doesn't meet size criteria")
-#     except Exception as e:
-#         print(f"Error downloading {url}: {e}")
-
-
 def download_generator(url):
     d = Download(url)
     download_urls.add(url)
@@ -259,12 +251,6 @@ def monitor_download():
         Gtk.main()
 
 
-def direct_download():
-    urls = clipboard.paste().split() if clipboard.paste() else sys.stdin.readlines()
-    # for url in urls:
-    #     download_file(url)
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dest', help='Directory to where download files, default is cwd')
@@ -274,9 +260,8 @@ if __name__ == "__main__":
                         help='Download only bigger than size (format dd[K|M|G]), default is in MB')
     parser.add_argument('-w', '--workers', type=int, default=3,
                         help='Number of maximum workers')
-    parser.add_argument('-c', '--clipboard', action='store_true',
-                        help='Parse directly from clipboard and exit')
     parser.add_argument('-v', '--verbose', action='store_true', help='Log requests')
+    parser.add_argument('-c', '--control', help='Control file')
 
     args = parser.parse_args()
 
@@ -288,7 +273,15 @@ if __name__ == "__main__":
     # min size
     min_size = _parse_size(args.size) if args.size else 0
 
-    if args.clipboard:
-        direct_download()
+    if args.control:
+        assert os.path.exists(args.control), f"Can't find the control file '{args.control}'"
+        _control_file = args.control
     else:
-        monitor_download()
+        _control_file = os.path.join(output_dir, '.dwnlr.ctl')
+        if not os.path.exists(_control_file):
+            f = open(_control_file, 'w')
+            f.close()
+
+    control = Control(_control_file)
+
+    monitor_download()
