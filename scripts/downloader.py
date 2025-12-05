@@ -100,7 +100,7 @@ class Download:
             else:
                 self.progress = 0
 
-        while self.attempts < max_retries:
+        while self.attempts < args.errors:
             time.sleep(self.attempts * 5)
             self.attempts += 1
             self.end_time = None
@@ -143,7 +143,7 @@ class Download:
                         resume_header = {}
 
                     with open(tmp_output_file, file_mode) as f:
-                        response = session.get(url, headers=resume_header, stream=True)
+                        response = session.get(url, headers=resume_header, timeout=180, stream=True)
                         for chunk in response.iter_content(chunk_size=1024):
                             if chunk:
                                 f.write(chunk)
@@ -262,6 +262,7 @@ if __name__ == "__main__":
                         help='Number of maximum workers')
     parser.add_argument('-v', '--verbose', action='store_true', help='Log requests')
     parser.add_argument('-c', '--control', help='Control file')
+    parser.add_argument('-e', '--errors', type=int, default=4, help="Number of errors before dropping")
 
     args = parser.parse_args()
 
