@@ -1,0 +1,167 @@
+{
+  'html_attributions': [],
+  'results': [
+    {
+      'business_status': 'OPERATIONAL',
+      'geometry': {
+        'location': {
+          'lat': 64.2549439,
+          'lng': -14.9933182
+        },
+        'viewport': {
+          'northeast': {
+            'lat': 64.2564026802915,
+            'lng': -14.99208471970849
+          },
+          'southwest': {
+            'lat': 64.2537047197085,
+            'lng': -14.9947826802915
+          }
+        }
+      },
+      'icon': 'https://maps.gstatic.com/mapfiles/place_api/icons/v1/png_71/generic_business-71.png',
+      'icon_background_color': '#13B5C7',
+      'icon_mask_base_uri': 'https://maps.gstatic.com/mapfiles/place_api/icons/v2/generic_pinlet',
+      'international_phone_number': '+354 478 2577',
+      'name': 'Vestrahorn',
+      'opening_hours': {
+        'open_now': True
+      },
+      'photos': [
+        {
+          'height': 1152,
+          'html_attributions': [
+            '<a href="https://maps.google.com/maps/contrib/105159243202272794441">Michiel Zijdewind</a>'
+          ],
+          'photo_reference': 'AZLasHqg_O6GW_AkuFlk047Nsj6iB63zUR2_fUk4HqKFJlAuUakgys_7Qa-kwTm3tp0Y7oFoGvrEjRWYlhYTJlyCFZvcKO9X2a1cR4HKiJNDYSFQQ77bDsMOdY7x8mbihzWYNfnndkjmVJspnhzx_CX7Qz9VAh35b17A5RMMpnPnjbJuRYOS2TT3_x1GqN-EcryyKbm4giCuTPn2IBZCwwVO0u3E_5qcRmOeWvx2ZDUn7VYDgzkxQOsQmejNCjRF1lejph8yseSTPVk85UzbWfso2Larb6MFZNsG5SZjpQiSUGvuW43LyZrIJ2VkswT3AcJEEzqjO5qDS4sdoKApMKoa3WeYYWvlB31h8fh1OdJvxeTAOUmO2peDD33ABYErSYxLHjQN-WoTycIV9Mj_UtNO44B0-I0xXKOhSUCH80GaYJeMq-u_4QBcmFTY7wZOGtIbPF6PFoqkei8GARkvmh4BVFF34aAU3a2Jq_-oy_9A7bTgsprzwahQTaSn3Vo2s0aF4gmDLUu9EHEAGAH3kRnZpH5V8ZjU--Km5UtSDuGRSO7aZ7Q54ucPtqjR2gaIq07q_bFQCCt2Gz4uboe5WYemVVHtV9KscfnXI1v2r40G_daTos3gtQ9pQIK-7srhOvZid852UR0X',
+          'width': 2048
+        }
+      ],
+      'place_id': 'ChIJO40pK2urz0gRVw3akt63c4A',
+      'plus_code': {
+        'compound_code': '7234+XM Höfn, Iceland',
+        'global_code': '9CP77234+XM'
+      },
+      'rating': 4.3,
+      'reference': 'ChIJO40pK2urz0gRVw3akt63c4A',
+      'scope': 'GOOGLE',
+      'types': [
+        'tourist_attraction',
+        'point_of_interest',
+        'establishment'
+      ],
+      'user_ratings_total': 11,
+      'vicinity': 'Horni, Höfn'
+    },
+    {
+      'business_status': 'OPERATIONAL',
+      'geometry': {
+        'location': {
+          'lat': 64.2549439,
+          'lng': -14.9933182
+        },
+        'viewport': {
+          'northeast': {
+            'lat': 64.25640733029151,
+            'lng': -14.9920612197085
+          },
+          'southwest': {
+            'lat': 64.2537093697085,
+            'lng': -14.9947591802915
+          }
+        }
+      },
+      'icon': 'https://maps.gstatic.com/mapfiles/place_api/icons/v1/png_71/cafe-71.png',
+      'icon_background_color': '#FF9E67',
+      'icon_mask_base_uri': 'https://maps.gstatic.com/mapfiles/place_api/icons/v2/cafe_pinlet',
+      'international_phone_number': '+354 478 2577',
+      'name': 'Viking Cafe & Guesthouse',
+      'opening_hours': {
+        'open_now': False
+      },
+      'photos': [
+        {
+          'height': 3024,
+          'html_attributions': [
+            '<a href="https://maps.google.com/maps/contrib/107659503286917673092">Tai W</a>'
+          ],
+          'photo_reference': 'AZLasHqVHC-Nrx_-6cvWCRsiqWObUSKXLIhi3X7vudGV5x52CMb2E2Mr5GQcDhUH33J9OQVcSG14JLMCe099qBfshwjfCdLRBkkqbpSThksAAO1Etqvv-fEd6luE0jvZKmUjHMvEdNWHSqJOE3dgdlVmS9jnATkcsXj2M0GtTpjUtYpioXANNXYYiOzl2iExSXNWUgv68cIhfbZNhdfU9nnEBG-XS0kbuI821hi_BF3QnBIuM7VSIyyVtfC8LHtg7nFZhoxh-5NwK4n_L8Zwea47wdAWCsPGR3xq1KEet_ihjNvrBJay2RZVFQUXttqYwg0nP6wH7VotBhZcsVzrBymwnI-BuRNdUH30njbm35yXK8rF3JBt_yVcUeHoixd9L9PlkBDeKNuX8CxUbGMTTtaVWOrRJik806whrDRYQ961h1uV1HIa7Y8pmkJaF_foN8lYazMhWSMDyzC7dq5-68UseeTpH0lLoKvpg2hI-Zc9pKb3Dvw9CabNYjrVa9mXwee6H9ZAzgWgZN5PdaBfIg1tdUJ6KPbu0WCouMAgz7blMYscGFqXqHaAcrApDMsWrc4FRTAHgMIWalsfJl31-YX3frnZQ_fC2vxIhxBmKZy3ayESpaP6NWKJezwr3NzE2MgaoRxK9ogXOHLyBFWQoVECJQ',
+          'width': 4032
+        }
+      ],
+      'place_id': 'ChIJ8xBJ5xSqz0gReCRozzI48i0',
+      'plus_code': {
+        'compound_code': '7234+XM Höfn, Iceland',
+        'global_code': '9CP77234+XM'
+      },
+      'price_level': 3,
+      'rating': 3.8,
+      'reference': 'ChIJ8xBJ5xSqz0gReCRozzI48i0',
+      'scope': 'GOOGLE',
+      'types': [
+        'cafe',
+        'lodging',
+        'point_of_interest',
+        'food',
+        'establishment'
+      ],
+      'user_ratings_total': 1842,
+      'vicinity': 'Horni, Höfn'
+    },
+    {
+      'business_status': 'OPERATIONAL',
+      'geometry': {
+        'location': {
+          'lat': 64.2552828,
+          'lng': -14.99390350000001
+        },
+        'viewport': {
+          'northeast': {
+            'lat': 64.2565898802915,
+            'lng': -14.9923810697085
+          },
+          'southwest': {
+            'lat': 64.2538919197085,
+            'lng': -14.99507903029151
+          }
+        }
+      },
+      'icon': 'https://maps.gstatic.com/mapfiles/place_api/icons/v1/png_71/camping-71.png',
+      'icon_background_color': '#4DB546',
+      'icon_mask_base_uri': 'https://maps.gstatic.com/mapfiles/place_api/icons/v2/camping_pinlet',
+      'international_phone_number': '+354 478 2577',
+      'name': 'Vestrahorn Camping',
+      'opening_hours': {
+        'open_now': True
+      },
+      'photos': [
+        {
+          'height': 3024,
+          'html_attributions': [
+            '<a href="https://maps.google.com/maps/contrib/111552029065342551541">Jean Bernard Dané</a>'
+          ],
+          'photo_reference': 'AZLasHqBwk8OeZHBQkj1UkhyR41bkP3veZsA8xwtT9HNJAE38VYHky2bq9C7JofCLCS_5EFbh1in50cO7kJ0gemSjN3EKa7ZWQ9sJLdPdAEk7dFHaDhSHJ8YPSMbRFE4WtAzT-aiaZauZZz4ElY3c9cfu5zCLLvJyMaIel9kw2hOOL_yrlgdn-3v4IzNmtv8eX27Lz7IFnagwrnHKVwKXqb-4OUKVOHBkO5y_WegX0BZxik2odDZxI1uY1cOxAYcqOboyWOLmh8PAYZwayL1hYqeTJtlbxqFIs7wvqucYUsc2_gqGIdq3RlEjB8Kfib9K1bfZKtHr6g4ZTwrzZT269w9Zs_GgHTHaH8YMQ0MSh4nNf_5QrRV5RYTGLHKEZQlIjHeF-zebsDyX0qUZ2gV4eGep5wGMQ-pJS_PZrZ6qBPW85grsGdFmrxgo23REh6PY4KuNtlIMoibWgMt54Tl00v26bDqNqKeVZ-cWFiKQteAdRmdo1Rv_GDHtdq_33m2nu7NQnXtNiZeM4LmTuHEnroziPAkKD4XanTDHuPZFy4aNb-w6TDVIbB-kHlO-d1X0BSkJNPs-Acpzjoce8LoULlLDn43Wrn3Z3TpGiNoFCQM6YnvMTBFMd6xTmfzAtZKP5bxOEf0fOd7JB9ZUDt9vl17kMyJI1Y',
+          'width': 4032
+        }
+      ],
+      'place_id': 'ChIJM5lpN3Orz0gRNF6yRYA_ILI',
+      'plus_code': {
+        'compound_code': '7244+4C Höfn, Iceland',
+        'global_code': '9CP77244+4C'
+      },
+      'rating': 3.8,
+      'reference': 'ChIJM5lpN3Orz0gRNF6yRYA_ILI',
+      'scope': 'GOOGLE',
+      'types': [
+        'campground',
+        'park',
+        'lodging',
+        'point_of_interest',
+        'establishment'
+      ],
+      'user_ratings_total': 761,
+      'vicinity': 'Horni, Höfn'
+    }
+  ],
+  'status': 'OK'
+}
