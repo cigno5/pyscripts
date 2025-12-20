@@ -57,6 +57,7 @@ class PictureInfo:
         if PictureInfo.T_SEQUENCE_NUMBER in self.tags and self.tags[PictureInfo.T_SEQUENCE_NUMBER] > 0:
             self.sequence = self.tags[PictureInfo.T_SEQUENCE_NUMBER]
 
+        self.cluster = None
         self.get_place_name = None
 
     def get_extension(self):
@@ -107,6 +108,7 @@ class PictureCluster:
 
     def add_picture(self, picture: PictureInfo):
         self.pictures.add(picture)
+        picture.cluster = self
 
         # compute new center
         _new_center = reduce(lambda l1, l2: (l1[0] + l2[0], l1[1] + l2[1]), [i.get_latlon() for i in self.pictures])
@@ -383,11 +385,15 @@ class PictureLocation:
 class PictureCollector:
     def __init__(self, search_radius=3000):
         self.search_radius = search_radius
-        self.not_geo_pictures: set[PictureInfo] = set()
+        self.all_pictures: list[PictureInfo] = []
         self.geo_clusters: list[PictureCluster] = []
         self.locations: list[PictureLocation] = []
 
-    def add_picture(self, picture: PictureInfo):
+    def add_picture_file(self, picture_file):
+        picture = PictureInfo(picture_file)
+
+        self.all_pictures.append(picture)
+
         if picture.has_latlon():
             cluster_found = False
             for cluster in self.geo_clusters:
@@ -398,8 +404,6 @@ class PictureCollector:
 
             if not cluster_found:
                 self.geo_clusters.append(PictureCluster(f"cluster{len(self.geo_clusters) + 1}", picture))
-        else:
-            self.not_geo_pictures.add(picture)
 
     def build_picture_list(self, location_strategy='full'):
         self.locations = [PictureLocation(c) for c in self.geo_clusters]
@@ -417,19 +421,14 @@ class PictureCollector:
             _places = list(dict.fromkeys([unidecode(t.get_place_name()) for t in traits if t]))
             return ", ".join(_places)
 
-        for _info in self.not_geo_pictures:
-            _info.get_place_name = place_none
-            yield _info
-
-        for _cluster in self.geo_clusters:
-            _location = next((_l for _l in collector.locations if _l.cluster == _cluster), None)
-            for _info in _cluster.pictures:
+        for _info in self.all_pictures:
+            if _info.cluster is None:
+                _info.get_place_name = place_none
+            else:
+                _location = next((_l for _l in collector.locations if _l.cluster == _info.cluster), None)
                 _info.get_place_name = place_full_strategy
-                yield _info
 
-    def __add__(self, pict: PictureInfo):
-        self.add_picture(pict)
-        return self
+            yield _info
 
 
 def _haversine(latlon1, latlon2):
@@ -587,6 +586,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', "--recursive", action='store_true', help="Scan recursively files from root directory")
     parser.add_argument('-v', "--verbose", action='store_true', help="Logs more")
 
+    parser.add_argument('-s', '--summary', action='store_true', help="Show summary")
     parser.add_argument("--dry-run", action='store_true', help="Don't move/rename files")
 
     args = parser.parse_args()
@@ -613,10 +613,13 @@ if __name__ == '__main__':
     collector = PictureCollector()
 
     # collects all pictures and read their properties
-    for _root, _dirs, _files in os.walk(search_dir):
+    for _root, _dirs, _files in os.walk(search_dir, topdown=True):
+        _dirs.sort()
+        _files.sort()
         for picture_file in [os.path.join(_root, f) for f in _files if f[-3:].lower() in SUPPORTED_RAW_EXT]:
             if not args.filter or args.filter in picture_file:
-                collector += PictureInfo(picture_file)
+                logging.debug(picture_file)
+                collector.add_picture_file(picture_file)
 
         if not args.recursive:
             break
@@ -626,7 +629,7 @@ if __name__ == '__main__':
 
     for info in collector.build_picture_list(location_strategy='full'):
         day = datetime.strftime(info.get_date_time(), "%d")
-        date = datetime.strftime(info.get_date_time(), "%Y-%m-%dT%H:%M:%S")
+        date = datetime.strftime(info.get_date_time(), "%Y-%m-%d_T%H:%M:%S")
         suffix = f"_{info.get_sequence_number():02d}" if info.get_sequence_number() else ""
         place = info.get_place_name()
 
@@ -635,7 +638,13 @@ if __name__ == '__main__':
 
         destination_file = os.path.join(new_folder, new_filename)
 
-        summary_rows.append(SummaryRow(os.path.basename(info.file), date, place, new_folder, new_filename))
+        summary_rows.append(
+            SummaryRow(
+                os.path.basename(info.file),
+                date,
+                place,
+                new_folder[len(dest_dir):],
+                new_filename))
 
         # logging.info(f"file: {file} -> {destination_file}")
         # if not args.dry_run:
@@ -645,4 +654,5 @@ if __name__ == '__main__':
         #
         #     os.rename(file, destination_file)
 
-    print(tabulate.tabulate(summary_rows, headers=SummaryRow._fields))
+    if args.summary:
+        logging.info(tabulate.tabulate(summary_rows, headers=SummaryRow._fields))
