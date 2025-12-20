@@ -852,8 +852,8 @@ use_center_factor = True
 base_score_factor = 10
 
 if __name__ == '__main__':
-    conf = load_configuration('.rawsort.ini')
-    API_KEY = conf['rawsort']['API_KEY']
+    conf = load_configuration('.pyscripts-google.ini')
+    API_KEY = conf['google']['api-key']
     gmaps: googlemaps.Client = googlemaps.Client(key=API_KEY)
 
 

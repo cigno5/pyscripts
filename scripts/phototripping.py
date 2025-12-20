@@ -54,8 +54,8 @@ class PictureInfo:
             self.tags[tag] = PictureInfo.TAGS[tag](value)
 
         self.sequence = None
-        if self.T_SEQUENCE_NUMBER in self.tags and self.tags[self.T_SEQUENCE_NUMBER] > 0:
-            self.sequence = self.file[self.T_SEQUENCE_NUMBER]
+        if PictureInfo.T_SEQUENCE_NUMBER in self.tags and self.tags[PictureInfo.T_SEQUENCE_NUMBER] > 0:
+            self.sequence = self.tags[PictureInfo.T_SEQUENCE_NUMBER]
 
         self.get_place_name = None
 
@@ -414,7 +414,7 @@ class PictureCollector:
                 _location.first_by_score(use_center_factor=True, use_size_factor=False)
             ]
 
-            _places = set([unidecode(t.get_place_name()) for t in traits if t])
+            _places = list(dict.fromkeys([unidecode(t.get_place_name()) for t in traits if t]))
             return ", ".join(_places)
 
         for _info in self.not_geo_pictures:
@@ -424,7 +424,6 @@ class PictureCollector:
         for _cluster in self.geo_clusters:
             _location = next((_l for _l in collector.locations if _l.cluster == _cluster), None)
             for _info in _cluster.pictures:
-                # _info.get_place_name = lambda: place_full_strategy()
                 _info.get_place_name = place_full_strategy
                 yield _info
 
@@ -461,7 +460,7 @@ def _geo_decode(cluster: PictureCluster, service):
     _tmp_fld = os.path.join(tempfile.gettempdir(), 'phototripping')
     os.makedirs(_tmp_fld, exist_ok=True)
 
-    _data_file = os.path.join(_tmp_fld, f'{cluster.name}-{service}.json')
+    _data_file = os.path.join(_tmp_fld, f'{cluster.center}-{service}.json')
 
     try:
         with open(_data_file, 'r') as df:
@@ -583,6 +582,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("search_dir", help="Search directory")
     parser.add_argument('-d', "--destination", help="Destination directory")
+    parser.add_argument('-f', '--filter')
 
     parser.add_argument('-r', "--recursive", action='store_true', help="Scan recursively files from root directory")
     parser.add_argument('-v', "--verbose", action='store_true', help="Logs more")
@@ -594,11 +594,12 @@ if __name__ == '__main__':
     logging.basicConfig(
         format='%(message)s',
         level=logging.DEBUG if args.verbose else logging.INFO)
-    # logging.getLogger("geopy").setLevel(logging.WARNING)
-    # logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("geopy").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     # Main application
     search_dir = os.path.abspath(os.path.expanduser(args.search_dir))
+    assert os.path.isdir(search_dir) and os.path.exists(search_dir), "Search directory is invalid or it doesn't exist"
     dest_dir = os.path.abspath(os.path.expanduser(args.destination)) if args.destination else search_dir
 
     logging.info(f'Scanning {args.search_dir}...')
@@ -614,10 +615,11 @@ if __name__ == '__main__':
     # collects all pictures and read their properties
     for _root, _dirs, _files in os.walk(search_dir):
         for picture_file in [os.path.join(_root, f) for f in _files if f[-3:].lower() in SUPPORTED_RAW_EXT]:
-            collector += PictureInfo(picture_file)
+            if not args.filter or args.filter in picture_file:
+                collector += PictureInfo(picture_file)
 
-            if not args.recursive:
-                break
+        if not args.recursive:
+            break
 
     SummaryRow = namedtuple("SummaryRow", 'file, date, place, new_folder, new_filename')
     summary_rows = []
@@ -643,4 +645,4 @@ if __name__ == '__main__':
         #
         #     os.rename(file, destination_file)
 
-    tabulate.tabulate(summary_rows, headers=SummaryRow._fields, tablefmt="fancy_grid")
+    print(tabulate.tabulate(summary_rows, headers=SummaryRow._fields))
