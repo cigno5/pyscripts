@@ -5,15 +5,17 @@ import os
 import random
 import re
 import shutil
-import tempfile
-from datetime import datetime
 import subprocess
+import tempfile
+from collections import namedtuple
+from datetime import datetime
 from functools import reduce
 from math import radians, asin, sqrt, cos, sin, pi, exp, log
-from collections import namedtuple
 
 import googlemaps
 import requests
+import tabulate
+from unidecode import unidecode
 
 from _common import load_configuration
 
@@ -55,6 +57,8 @@ class PictureInfo:
         if self.T_SEQUENCE_NUMBER in self.tags and self.tags[self.T_SEQUENCE_NUMBER] > 0:
             self.sequence = self.file[self.T_SEQUENCE_NUMBER]
 
+        self.get_place_name = None
+
     def get_extension(self):
         return os.path.splitext(self.file)[-1]
 
@@ -79,21 +83,30 @@ class PictureInfo:
                 f"Sequence: {self.sequence}; "
                 f"Geolocation: {'yes' if self.has_latlon() else 'no'};")
 
+    def __hash__(self):
+        return hash(self.file)
+
+    def __eq__(self, other):
+        return self.file == other.file
+
 
 class PictureCluster:
     def __init__(self, name, first_picture: PictureInfo = None):
         self.name = name
         self.center = (0, 0)
         self.radius = 0
-        self.pictures: list[PictureInfo] = []
+        self.pictures: set[PictureInfo] = set()
         if first_picture:
             self.add_picture(first_picture)
 
     def is_in_range(self, picture: PictureInfo) -> bool:
         return picture.get_distance(self.center) < max(collector.search_radius, self.radius)
 
+    def contains(self, picture: PictureInfo) -> bool:
+        return picture in self.pictures
+
     def add_picture(self, picture: PictureInfo):
-        self.pictures.append(picture)
+        self.pictures.add(picture)
 
         # compute new center
         _new_center = reduce(lambda l1, l2: (l1[0] + l2[0], l1[1] + l2[1]), [i.get_latlon() for i in self.pictures])
@@ -277,7 +290,7 @@ class GeoTraits:
         self.intersection_analysis = _IntersectionAnalysis(self.center, self.radius, self.viewport[0],
                                                            self.viewport[1])
 
-    def get_place_score(self, use_size_factor=True, use_center_factor=True):
+    def get_place_score(self, use_size_factor, use_center_factor):
         def x_score(base_score, _type):
             if _type in GeoTraits.INTERESTING_TYPES:
                 return base_score * 10 * (len(GeoTraits.INTERESTING_TYPES) - GeoTraits.INTERESTING_TYPES.index(_type))
@@ -313,69 +326,66 @@ class GeoTraits:
         return tp in self.types or tp == self.primary_type
 
     def __str__(self):
-        return f"""{self.source} ----------------------------------------------------------------------
-  - Place name.....: {self.get_place_name()}
-  - Place score....: {self.get_place_score()}
+        return f"""{self.service} ----------------------------------------------------------------------
+  - Place name........: {self.get_place_name()}
+  - Place score.......: {self.get_place_score(False, False)}
+  - Place score SF....: {self.get_place_score(True, False)}
+  - Place score CF....: {self.get_place_score(False, True)}
+  - Place score SF+CF.: {self.get_place_score(True, True)}
   - Intersection analysis
-    - Size factor..: {self.intersection_analysis.get_size_factor()}
-    - Center factor: {self.intersection_analysis.get_center_factor()}
-  - Address........: {self.address}
-  - Primary type...: {self.primary_type}
-  - Types..........: {', '.join(self.types)}
-  - Geometry.......: {self.viewport}
-  - Address Chain..:
+    - Size factor.....: {self.intersection_analysis.get_size_factor()}
+    - Center factor...: {self.intersection_analysis.get_center_factor()}
+  - Address...........: {self.address}
+  - Primary type......: {self.primary_type}
+  - Types.............: {', '.join(self.types)}
+  - Geometry..........: {self.viewport}
+  - Address Chain.....:
 """ + '\n'.join([f"    - {str(c)}" for c in self.address_chain])
 
-    def __lt__(self, other):
-        return self.get_place_score() < other.get_place_score()
 
-
-class Location:
-    def __init__(self, name, cluster: PictureCluster):
-        self.name = name
+class PictureLocation:
+    def __init__(self, cluster: PictureCluster):
         self.cluster = cluster
 
         self.geocode_traits = _geo_decode(cluster, 'geocode')
         self.gplaces_traits = _geo_decode(cluster, 'gplaces')
 
-    def first_guess(self):
-        for _traits in [self.geocode_traits, self.gplaces_traits]:
-            for _trait in _traits:
-                if _trait.get_place_name():
-                    return _trait
+    def first_by_service(self, service) -> GeoTraits:
+        def flt(t: GeoTraits):
+            return t.get_place_name() is not None
 
-    def first_guess_places_first(self):
-        for _traits in [self.gplaces_traits, self.geocode_traits]:
-            for _trait in _traits:
-                if _trait.get_place_name():
-                    return _trait
+        _traits = None
 
-    def first_by_score(self) -> GeoTraits:
-        return next(
-            iter(
-                sorted(
-                    filter(lambda _loc: _loc.get_place_score() > 0,
-                           self.geocode_traits + self.gplaces_traits),
-                    key=lambda _loc: _loc.get_place_score(),
-                    reverse=True)), None)
+        if service == 'gplaces':
+            _traits = self.gplaces_traits
 
-    def all_valid(self):
-        return sorted(
-            filter(lambda _loc: _loc.get_place_score() > 0,
-                   self.geocode_traits + self.gplaces_traits),
-            key=lambda _loc: _loc.get_place_score(),
-            reverse=True)
+        if service == 'geocode':
+            _traits = self.geocode_traits
 
-    def all(self):
-        return sorted(self.geocode_traits + self.gplaces_traits, reverse=True)
+        return next(iter(filter(flt, _traits)), None)
+
+    def first_by_score(self, use_size_factor=False, use_center_factor=False, services=None) -> GeoTraits:
+        def _srt(t: GeoTraits):
+            return t.get_place_score(use_size_factor, use_center_factor)
+
+        def _flt(t: GeoTraits):
+            return _srt(t) > 0
+
+        _traits = []
+        if services is None or 'geocode' in services:
+            _traits += self.geocode_traits
+        if services is None or 'gplaces' in services:
+            _traits += self.gplaces_traits
+
+        return next(iter(sorted(filter(_flt, _traits), key=_srt, reverse=True)), None)
 
 
 class PictureCollector:
     def __init__(self, search_radius=3000):
         self.search_radius = search_radius
-        self.not_geo_pictures: list[PictureInfo] = []
+        self.not_geo_pictures: set[PictureInfo] = set()
         self.geo_clusters: list[PictureCluster] = []
-        self.locations = []
+        self.locations: list[PictureLocation] = []
 
     def add_picture(self, picture: PictureInfo):
         if picture.has_latlon():
@@ -389,7 +399,34 @@ class PictureCollector:
             if not cluster_found:
                 self.geo_clusters.append(PictureCluster(f"cluster{len(self.geo_clusters) + 1}", picture))
         else:
-            self.not_geo_pictures.append(picture)
+            self.not_geo_pictures.add(picture)
+
+    def build_picture_list(self, location_strategy='full'):
+        self.locations = [PictureLocation(c) for c in self.geo_clusters]
+
+        def place_none():
+            return None
+
+        def place_full_strategy():
+            traits = [
+                _location.first_by_service('gplaces'),
+                _location.first_by_service('geocode'),
+                _location.first_by_score(use_center_factor=True, use_size_factor=False)
+            ]
+
+            _places = set([unidecode(t.get_place_name()) for t in traits if t])
+            return ", ".join(_places)
+
+        for _info in self.not_geo_pictures:
+            _info.get_place_name = place_none
+            yield _info
+
+        for _cluster in self.geo_clusters:
+            _location = next((_l for _l in collector.locations if _l.cluster == _cluster), None)
+            for _info in _cluster.pictures:
+                # _info.get_place_name = lambda: place_full_strategy()
+                _info.get_place_name = place_full_strategy
+                yield _info
 
     def __add__(self, pict: PictureInfo):
         self.add_picture(pict)
@@ -582,19 +619,28 @@ if __name__ == '__main__':
             if not args.recursive:
                 break
 
-            # day = datetime.strftime(info.get_date_time(), "%d")
-            # date = datetime.strftime(info.get_date_time(), "%Y-%m-%dT%H:%M:%S")
-            # suffix = f"_{info.get_sequence_number():02d}" if info.get_sequence_number() else ""
-            #
-            # new_folder = os.path.join(dest, f"{day} - {place}" if place else day)
-            # new_filename = f"IMG_{date}{suffix}{info.get_extension()}"
-            #
-            # destination_file = os.path.join(new_folder, new_filename)
-            #
-            # # logging.info(f"file: {file} -> {destination_file}")
-            # if not args.dry_run:
-            #     os.makedirs(new_folder, exist_ok=True)
-            #     if os.path.exists(destination_file):
-            #         raise ValueError(f"Destination file already exists")
-            #
-            #     os.rename(file, destination_file)
+    SummaryRow = namedtuple("SummaryRow", 'file, date, place, new_folder, new_filename')
+    summary_rows = []
+
+    for info in collector.build_picture_list(location_strategy='full'):
+        day = datetime.strftime(info.get_date_time(), "%d")
+        date = datetime.strftime(info.get_date_time(), "%Y-%m-%dT%H:%M:%S")
+        suffix = f"_{info.get_sequence_number():02d}" if info.get_sequence_number() else ""
+        place = info.get_place_name()
+
+        new_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
+        new_filename = f"IMG_{date}{suffix}{info.get_extension()}"
+
+        destination_file = os.path.join(new_folder, new_filename)
+
+        summary_rows.append(SummaryRow(os.path.basename(info.file), date, place, new_folder, new_filename))
+
+        # logging.info(f"file: {file} -> {destination_file}")
+        # if not args.dry_run:
+        #     os.makedirs(new_folder, exist_ok=True)
+        #     if os.path.exists(destination_file):
+        #         raise ValueError(f"Destination file already exists")
+        #
+        #     os.rename(file, destination_file)
+
+    tabulate.tabulate(summary_rows, headers=SummaryRow._fields, tablefmt="fancy_grid")
