@@ -908,7 +908,7 @@ if __name__ == '__main__':
         print(f"{_place} --------------------------------------------------------------------------")
         func(Location(_place, *_statistical_circle(CLUSTER_POINTS[CLUSTER_CENTER_MAP[_place]])))
 
-    data = [['Place', 'Score', 'Score*SF', 'Score*CF', 'First places']]
+    data = []
     for place, cluster_center in CLUSTER_CENTER_MAP.items():
         if choice is None or choice == place:
             if summary:
@@ -931,10 +931,14 @@ if __name__ == '__main__':
                 f = loc.first_guess_places_first()
                 row.append(f.get_place_name() if f else '-')
 
+                use_size_factor = True
+                f = loc.first_guess()
+                row.append(f.get_place_name() if f else '-')
+
                 data.append(row)
             else:
                 print_location(place)
 
     if summary:
-        print(tabulate.tabulate(data))
+        print(tabulate.tabulate(data, headers=['Place', 'Score', 'Score*SF', 'Score*CF', 'First places gplaces', 'First places geocode']))
 
