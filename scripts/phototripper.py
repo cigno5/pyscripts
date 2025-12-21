@@ -83,7 +83,7 @@ class PictureInfo:
 
     def move(self, destination_file):
         if os.path.exists(destination_file):
-            raise FileExistsError(f"{destination_file} already exists")
+            raise FileExistsError(f"{destination_file} already exists (from {os.path.basename(self.file)})")
         os.rename(self.file, destination_file)
 
     def __str__(self):
@@ -591,8 +591,18 @@ def move():
         _places = list(dict.fromkeys([unidecode(t.get_place_name()) for t in traits if t]))
         return ", ".join(_places)
 
+    _pict_counter = _checkpoint_counter = 0
+    _checkpoint_start = time.perf_counter()
+
     logging.info(f"Loading pictures metadata with location strategy {location_strategy}...")
     for info in all_pictures:
+        _pict_counter += 1
+        _checkpoint_counter += 1
+        if _checkpoint_counter > 50 and time.perf_counter() - _checkpoint_start > 10:
+            _checkpoint_start = time.perf_counter()
+            _checkpoint_counter = 0
+            logging.info(f"Processing pictures ({_pict_counter}/{len(all_pictures)})...")
+
         if info.cluster is None:
             info.get_place_name = place_none
         else:
@@ -689,6 +699,9 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--summary', action='store_true', help="Show summary")
     parser.add_argument("--dry-run", action='store_true', help="Don't move/rename files")
 
+    group = parser.add_argument_group('Location service')
+    group.add_argument('-e', "--search-radius", help="Search radius", type=int, default=3000)
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -703,7 +716,7 @@ if __name__ == '__main__':
     dest_dir = os.path.abspath(os.path.expanduser(args.destination)) if args.destination else search_dir
 
     location_strategy = 'full'
-    search_radius = 3000
+    search_radius = args.search_radius
 
     logging.info(f"""=====================================================================
 Phototripper, a useless photo organizer!
