@@ -348,6 +348,7 @@ class GeoTraits:
 class PictureLocation:
     def __init__(self, cluster: PictureCluster):
         self.cluster = cluster
+        logging.info(f"Loading location information for cluster {cluster.name} ({cluster.center})...")
 
         self.geocode_traits = _geo_decode(cluster, 'geocode')
         self.gplaces_traits = _geo_decode(cluster, 'gplaces')
@@ -390,6 +391,7 @@ class PictureCollector:
         self.locations: list[PictureLocation] = []
 
     def add_picture_file(self, picture_file):
+        logging.debug(f"Adding picture file {os.path.basename(picture_file)}")
         picture = PictureInfo(picture_file)
 
         self.all_pictures.append(picture)
@@ -399,13 +401,19 @@ class PictureCollector:
             for cluster in self.geo_clusters:
                 if cluster.is_in_range(picture):
                     cluster.add_picture(picture)
+                    logging.debug(f" > picture falls in cluster {cluster.name} "
+                                  f"with center {cluster.center} "
+                                  f"together with {len(cluster.pictures)} pictures")
                     cluster_found = True
                     break
 
             if not cluster_found:
-                self.geo_clusters.append(PictureCluster(f"cluster{len(self.geo_clusters) + 1}", picture))
+                cluster = PictureCluster(f"cluster{len(self.geo_clusters) + 1}", picture)
+                self.geo_clusters.append(cluster)
+                logging.debug(f" > created new cluster {cluster.name} with center {cluster.center}")
 
     def build_picture_list(self, location_strategy='full'):
+        logging.info(f"Building picture list with location strategy {location_strategy}...")
         self.locations = [PictureLocation(c) for c in self.geo_clusters]
 
         def place_none():
@@ -421,6 +429,7 @@ class PictureCollector:
             _places = list(dict.fromkeys([unidecode(t.get_place_name()) for t in traits if t]))
             return ", ".join(_places)
 
+        logging.info("Listing all pictures...")
         for _info in self.all_pictures:
             if _info.cluster is None:
                 _info.get_place_name = place_none
@@ -452,9 +461,7 @@ def _rect_area(sw, ne):
 def _geo_decode(cluster: PictureCluster, service):
     assert service in ['geocode', 'gplaces', 'nominatim']
 
-    conf = load_configuration('.pyscripts-google.ini')
-    api_key = conf['google']['api-key']
-    gmaps: googlemaps.Client = googlemaps.Client(api_key)
+    logging.info(f"Loading data for cluster {cluster.name} ({cluster.center}) through service {service}...")
 
     _tmp_fld = os.path.join(tempfile.gettempdir(), 'phototripping')
     os.makedirs(_tmp_fld, exist_ok=True)
@@ -464,11 +471,13 @@ def _geo_decode(cluster: PictureCluster, service):
     try:
         with open(_data_file, 'r') as df:
             data = json.load(df)
+            logging.debug(f" > data loaded from cache file {_data_file}")
 
     except FileNotFoundError:
         with open(_data_file, 'w') as df:
             if service == 'geocode':
                 data = gmaps.reverse_geocode(cluster.center)
+                logging.debug(" > data loaded from Google reverse geocode API")
             elif service == 'gplaces':
                 headers = {
                     'Content-Type': 'application/json',
@@ -492,13 +501,16 @@ def _geo_decode(cluster: PictureCluster, service):
                     },
                 }
 
-                r = requests.post('https://places.googleapis.com/v1/places:searchNearby', headers=headers,
+                r = requests.post('https://places.googleapis.com/v1/places:searchNearby',
+                                  headers=headers,
                                   json=json_data)
                 r.raise_for_status()
                 data = r.json()['places']
+                logging.debug(" > data loaded from Google Places 'Search Nearby' API")
             elif service == 'nominatim':
                 raise NotImplementedError('Nominatim not implemented yet')
 
+            logging.debug(f" > data stored in cache file {_data_file}")
             json.dump(data, df)
 
     return [GeoTraits(cluster.center, cluster.radius, service, obj) for obj in data]
@@ -602,24 +614,39 @@ if __name__ == '__main__':
     assert os.path.isdir(search_dir) and os.path.exists(search_dir), "Search directory is invalid or it doesn't exist"
     dest_dir = os.path.abspath(os.path.expanduser(args.destination)) if args.destination else search_dir
 
-    logging.info(f'Scanning {args.search_dir}...')
-    if args.destination:
-        logging.info(f'Destination directory: {args.destination}')
+    logging.info(f"""=====================================================================
+Phototripper, a useless photo organizer!
+
+Search directory.......: {args.search_dir}
+Recursive scan.........: {'yes' if args.recursive else 'no'}
+Destination directory..: {dest_dir}
+
+Verbose mode...........: {'yes' if args.verbose else 'no'}
+Dry run................: {'yes' if args.dry_run else 'no'}
+
+Print summary..........: {'yes' if args.summary else 'no'}
+""")
 
     # initial checks
+    logging.debug("Checking pre-requisites...")
     if not shutil.which("exiftool"):
         raise ValueError("Exiftool is not found in this system")
 
+    logging.debug("Initializing Phototripper...")
     collector = PictureCollector()
+    api_key = load_configuration('.pyscripts-google.ini')['google']['api-key']
+    gmaps: googlemaps.Client = googlemaps.Client(api_key)
 
     # collects all pictures and read their properties
+    logging.info("Collecting pictures...")
     for _root, _dirs, _files in os.walk(search_dir, topdown=True):
+        logging.info(f"Scanning {_root} ({len(_files)} files)...")
         _dirs.sort()
         _files.sort()
-        for picture_file in [os.path.join(_root, f) for f in _files if f[-3:].lower() in SUPPORTED_RAW_EXT]:
-            if not args.filter or args.filter in picture_file:
-                logging.debug(picture_file)
-                collector.add_picture_file(picture_file)
+        for _pic_file in [os.path.join(_root, f) for f in _files if f[-3:].lower() in SUPPORTED_RAW_EXT]:
+            if not args.filter or args.filter in _pic_file:
+                logging.info(f" > {_pic_file[len(_root):]}")
+                collector.add_picture_file(_pic_file)
 
         if not args.recursive:
             break
@@ -646,7 +673,7 @@ if __name__ == '__main__':
                 new_folder[len(dest_dir):],
                 new_filename))
 
-        # logging.info(f"file: {file} -> {destination_file}")
+        logging.info(f"{info.file} -> {destination_file}")
         # if not args.dry_run:
         #     os.makedirs(new_folder, exist_ok=True)
         #     if os.path.exists(destination_file):
