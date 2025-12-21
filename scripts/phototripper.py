@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from collections import namedtuple
 from datetime import datetime
 from functools import reduce
@@ -23,7 +24,7 @@ SUPPORTED_RAW_EXT = ["arw"]
 EARTH_RADIUS = 6371000
 
 AddressSegment = namedtuple("AddressSegment", "name, types")
-SummaryRow = namedtuple("SummaryRow", 'file, date, cluster, place, new_folder, new_filename')
+SummaryRow = namedtuple("SummaryRow", 'file, date, cluster, place, new_folder, new_filename, moved')
 
 
 class PictureInfo:
@@ -79,6 +80,11 @@ class PictureInfo:
 
     def get_distance(self, latlon1):
         return _haversine(self.get_latlon(), latlon1) if self.has_latlon() else None
+
+    def move(self, destination_file):
+        if os.path.exists(destination_file):
+            raise FileExistsError(f"{destination_file} already exists")
+        os.rename(self.file, destination_file)
 
     def __str__(self):
         return (f"File: {os.path.basename(self.file)}; "
@@ -605,6 +611,17 @@ def move():
         new_filename = f"IMG_{date}{suffix}{info.get_extension()}"
 
         destination_file = os.path.join(new_folder, new_filename)
+        moved = False
+
+        logging.debug(f"{info.file} -> {destination_file}")
+
+        if not args.dry_run:
+            os.makedirs(new_folder, exist_ok=True)
+            try:
+                info.move(destination_file)
+                moved = True
+            except FileExistsError as e:
+                logging.warning(f"Destination file {destination_file} already exists")
 
         summary_rows.append(
             SummaryRow(
@@ -613,54 +630,51 @@ def move():
                 info.cluster.name if info.cluster else None,
                 place,
                 new_folder[len(dest_dir):],
-                new_filename))
-
-        logging.debug(f"{info.file} -> {destination_file}")
-        # if not args.dry_run:
-        #     os.makedirs(new_folder, exist_ok=True)
-        #     info.move_picture(destination_file)
+                new_filename,
+                moved))
 
 
 def print_summary():
-    logging.info('Summary --------------------------------------------------------------------------------------------')
-    logging.info(
+    logging.debug('\nSummary ------------------------------------------------------------------------------------------')
+    logging.debug(
         tabulate.tabulate(
             summary_rows,
-            headers=SummaryRow._fields))
+            headers=SummaryRow._fields,
+            tablefmt='pipe'))
 
-    SubSummaryRow = namedtuple('SubSummaryRow', 'cluster_name, place, date, moved_files')
+    SubSummaryRow = namedtuple('SubSummaryRow', 'cluster_name, place, date, moved_files, not_moved_files')
     sub_summary_rows = []
 
-    summary_recap = {}
-    cluster_place = {}
+    _summary_recap = {}
+    _cluster_to_place = {}
 
     for summary_row in summary_rows:
         _date = summary_row.date[0:10]
-        if summary_row.cluster not in summary_recap:
-            summary_recap[summary_row.cluster] = {}
+        if summary_row.cluster not in _summary_recap:
+            _summary_recap[summary_row.cluster] = {}
 
-        if _date not in summary_recap[summary_row.cluster]:
-            summary_recap[summary_row.cluster][_date] = 0
+        if _date not in _summary_recap[summary_row.cluster]:
+            _summary_recap[summary_row.cluster][_date] = [0, 0]
 
-        summary_recap[summary_row.cluster][_date] += 1
+        _summary_recap[summary_row.cluster][_date][0 if summary_row.moved else 1] += 1
 
-        if summary_row.cluster not in cluster_place:
-            cluster_place[summary_row.cluster] = summary_row.place
+        if summary_row.cluster not in _cluster_to_place:
+            _cluster_to_place[summary_row.cluster] = summary_row.place
 
-    for cluster, dates in summary_recap.items():
+    for cluster, dates in _summary_recap.items():
         _f = True
-        for date, count in dates.items():
+        for date, counters in dates.items():
             if _f:
-                sub_summary_rows.append(SubSummaryRow(cluster, cluster_place[cluster], date, count))
+                sub_summary_rows.append(SubSummaryRow(cluster, _cluster_to_place[cluster], date, counters[0], counters[1]))
             else:
-                sub_summary_rows.append(SubSummaryRow('', '', date, count))
+                sub_summary_rows.append(SubSummaryRow('', '', date, counters[0], counters[1]))
             _f = False
 
-    logging.info('Summary recap --------------------------------------------------------------------------------------')
+    logging.info('\nSummary recap ------------------------------------------------------------------------------------')
     logging.info(
         tabulate.tabulate(
             sub_summary_rows,
-            headers=SubSummaryRow._fields))
+            headers=SubSummaryRow._fields, tablefmt="pipe"))
 
 
 if __name__ == '__main__':
@@ -718,8 +732,12 @@ Print summary..........: {'yes' if args.summary else 'no'}
     locations: list[PictureLocation] = []
     summary_rows: list[SummaryRow] = []
 
+    start_time = time.perf_counter()
+
     collect()
     move()
 
     if args.summary:
         print_summary()
+
+    logging.info(f"Done in {time.perf_counter() - start_time:.3f} seconds")
