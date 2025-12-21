@@ -23,6 +23,7 @@ SUPPORTED_RAW_EXT = ["arw"]
 EARTH_RADIUS = 6371000
 
 AddressSegment = namedtuple("AddressSegment", "name, types")
+SummaryRow = namedtuple("SummaryRow", 'file, date, cluster, place, new_folder, new_filename')
 
 
 class PictureInfo:
@@ -101,7 +102,7 @@ class PictureCluster:
             self.add_picture(first_picture)
 
     def is_in_range(self, picture: PictureInfo) -> bool:
-        return picture.get_distance(self.center) < max(collector.search_radius, self.radius)
+        return picture.get_distance(self.center) < max(search_radius, self.radius)
 
     def contains(self, picture: PictureInfo) -> bool:
         return picture in self.pictures
@@ -118,7 +119,7 @@ class PictureCluster:
         # compute new statistical circle (to cover the area of all pictures)
 
         if len(self.pictures) == 1:
-            self.radius = collector.search_radius / 10
+            self.radius = search_radius / 10
         else:
             _distances = [_haversine(self.center, p.get_latlon()) for p in self.pictures]
 
@@ -383,63 +384,6 @@ class PictureLocation:
         return next(iter(sorted(filter(_flt, _traits), key=_srt, reverse=True)), None)
 
 
-class PictureCollector:
-    def __init__(self, search_radius=3000):
-        self.search_radius = search_radius
-        self.all_pictures: list[PictureInfo] = []
-        self.geo_clusters: list[PictureCluster] = []
-        self.locations: list[PictureLocation] = []
-
-    def add_picture_file(self, picture_file):
-        logging.debug(f"Adding picture file {os.path.basename(picture_file)}")
-        picture = PictureInfo(picture_file)
-
-        self.all_pictures.append(picture)
-
-        if picture.has_latlon():
-            cluster_found = False
-            for cluster in self.geo_clusters:
-                if cluster.is_in_range(picture):
-                    cluster.add_picture(picture)
-                    logging.debug(f" > picture falls in cluster {cluster.name} "
-                                  f"with center {cluster.center} "
-                                  f"together with {len(cluster.pictures)} pictures")
-                    cluster_found = True
-                    break
-
-            if not cluster_found:
-                cluster = PictureCluster(f"cluster{len(self.geo_clusters) + 1}", picture)
-                self.geo_clusters.append(cluster)
-                logging.debug(f" > created new cluster {cluster.name} with center {cluster.center}")
-
-    def build_picture_list(self, location_strategy='full'):
-        logging.info(f"Building picture list with location strategy {location_strategy}...")
-        self.locations = [PictureLocation(c) for c in self.geo_clusters]
-
-        def place_none():
-            return None
-
-        def place_full_strategy():
-            traits = [
-                _location.first_by_service('gplaces'),
-                _location.first_by_service('geocode'),
-                _location.first_by_score(use_center_factor=True, use_size_factor=False)
-            ]
-
-            _places = list(dict.fromkeys([unidecode(t.get_place_name()) for t in traits if t]))
-            return ", ".join(_places)
-
-        logging.info("Listing all pictures...")
-        for _info in self.all_pictures:
-            if _info.cluster is None:
-                _info.get_place_name = place_none
-            else:
-                _location = next((_l for _l in collector.locations if _l.cluster == _info.cluster), None)
-                _info.get_place_name = place_full_strategy
-
-            yield _info
-
-
 def _haversine(latlon1, latlon2):
     d_lat = radians(latlon2[0] - latlon1[0])
     d_lon = radians(latlon2[1] - latlon1[1])
@@ -461,7 +405,7 @@ def _rect_area(sw, ne):
 def _geo_decode(cluster: PictureCluster, service):
     assert service in ['geocode', 'gplaces', 'nominatim']
 
-    logging.info(f"Loading data for cluster {cluster.name} ({cluster.center}) through service {service}...")
+    logging.debug(f"Loading data for cluster {cluster.name} ({cluster.center}) through service {service}...")
 
     _tmp_fld = os.path.join(tempfile.gettempdir(), 'phototripping')
     os.makedirs(_tmp_fld, exist_ok=True)
@@ -496,7 +440,7 @@ def _geo_decode(cluster: PictureCluster, service):
                                 'latitude': cluster.center[0],
                                 'longitude': cluster.center[1],
                             },
-                            'radius': max(cluster.radius, collector.search_radius),
+                            'radius': max(cluster.radius, search_radius),
                         },
                     },
                 }
@@ -589,6 +533,136 @@ def _traits_to_geojson(cluster, traits):
     }
 
 
+def collect():
+    def add_picture_file(picture_file):
+        logging.debug(f"Adding picture file {os.path.basename(picture_file)}")
+        picture = PictureInfo(picture_file)
+
+        all_pictures.append(picture)
+
+        if picture.has_latlon():
+            cluster_found = False
+            for cluster in geo_clusters:
+                if cluster.is_in_range(picture):
+                    cluster.add_picture(picture)
+                    logging.debug(f" > picture falls in cluster {cluster.name} "
+                                  f"with center {cluster.center} "
+                                  f"together with {len(cluster.pictures)} pictures")
+                    cluster_found = True
+                    break
+
+            if not cluster_found:
+                cluster = PictureCluster(f"cluster{len(geo_clusters) + 1}", picture)
+                geo_clusters.append(cluster)
+                logging.debug(f" > created new cluster {cluster.name} with center {cluster.center}")
+
+    # collects all pictures and read their properties
+    logging.info("Collecting pictures...")
+    for _root, _dirs, _files in os.walk(search_dir, topdown=True):
+        logging.info(f"Scanning {_root} ({len(_files)} files)...")
+        _dirs.sort()
+        _files.sort()
+        for _pic_file in [os.path.join(_root, f) for f in _files if f[-3:].lower() in SUPPORTED_RAW_EXT]:
+            if not args.filter or args.filter in _pic_file:
+                logging.debug(f" > {_pic_file[len(_root):]}")
+                add_picture_file(_pic_file)
+
+        if not args.recursive:
+            break
+
+
+def move():
+    def place_none():
+        return None
+
+    def place_full_strategy():
+        traits = [
+            _location.first_by_service('gplaces'),
+            _location.first_by_service('geocode'),
+            _location.first_by_score(use_center_factor=True, use_size_factor=False)
+        ]
+
+        _places = list(dict.fromkeys([unidecode(t.get_place_name()) for t in traits if t]))
+        return ", ".join(_places)
+
+    logging.info(f"Loading pictures metadata with location strategy {location_strategy}...")
+    for info in all_pictures:
+        if info.cluster is None:
+            info.get_place_name = place_none
+        else:
+            _location = next((_l for _l in locations if _l.cluster == info.cluster), None)
+            if _location is None:
+                _location = PictureLocation(info.cluster)
+                locations.append(_location)
+            info.get_place_name = place_full_strategy
+
+        day = datetime.strftime(info.get_date_time(), "%d")
+        date = datetime.strftime(info.get_date_time(), "%Y-%m-%d_T%H:%M:%S")
+        suffix = f"_{info.get_sequence_number():02d}" if info.get_sequence_number() else ""
+        place = info.get_place_name()
+
+        new_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
+        new_filename = f"IMG_{date}{suffix}{info.get_extension()}"
+
+        destination_file = os.path.join(new_folder, new_filename)
+
+        summary_rows.append(
+            SummaryRow(
+                os.path.basename(info.file),
+                date,
+                info.cluster.name if info.cluster else None,
+                place,
+                new_folder[len(dest_dir):],
+                new_filename))
+
+        logging.debug(f"{info.file} -> {destination_file}")
+        # if not args.dry_run:
+        #     os.makedirs(new_folder, exist_ok=True)
+        #     info.move_picture(destination_file)
+
+
+def print_summary():
+    logging.info('Summary --------------------------------------------------------------------------------------------')
+    logging.info(
+        tabulate.tabulate(
+            summary_rows,
+            headers=SummaryRow._fields))
+
+    SubSummaryRow = namedtuple('SubSummaryRow', 'cluster_name, place, date, moved_files')
+    sub_summary_rows = []
+
+    summary_recap = {}
+    cluster_place = {}
+
+    for summary_row in summary_rows:
+        _date = summary_row.date[0:10]
+        if summary_row.cluster not in summary_recap:
+            summary_recap[summary_row.cluster] = {}
+
+        if _date not in summary_recap[summary_row.cluster]:
+            summary_recap[summary_row.cluster][_date] = 0
+
+        summary_recap[summary_row.cluster][_date] += 1
+
+        if summary_row.cluster not in cluster_place:
+            cluster_place[summary_row.cluster] = summary_row.place
+
+    for cluster, dates in summary_recap.items():
+        _f = True
+        for date, count in dates.items():
+            if _f:
+                sub_summary_rows.append(SubSummaryRow(cluster, cluster_place[cluster], date, count))
+            else:
+                sub_summary_rows.append(SubSummaryRow('', '', date, count))
+            _f = False
+
+    logging.info('Summary recap --------------------------------------------------------------------------------------')
+    logging.info(
+        tabulate.tabulate(
+            sub_summary_rows,
+            headers=SubSummaryRow._fields))
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("search_dir", help="Search directory")
@@ -614,6 +688,9 @@ if __name__ == '__main__':
     assert os.path.isdir(search_dir) and os.path.exists(search_dir), "Search directory is invalid or it doesn't exist"
     dest_dir = os.path.abspath(os.path.expanduser(args.destination)) if args.destination else search_dir
 
+    location_strategy = 'full'
+    search_radius = 3000
+
     logging.info(f"""=====================================================================
 Phototripper, a useless photo organizer!
 
@@ -633,53 +710,16 @@ Print summary..........: {'yes' if args.summary else 'no'}
         raise ValueError("Exiftool is not found in this system")
 
     logging.debug("Initializing Phototripper...")
-    collector = PictureCollector()
     api_key = load_configuration('.pyscripts-google.ini')['google']['api-key']
     gmaps: googlemaps.Client = googlemaps.Client(api_key)
 
-    # collects all pictures and read their properties
-    logging.info("Collecting pictures...")
-    for _root, _dirs, _files in os.walk(search_dir, topdown=True):
-        logging.info(f"Scanning {_root} ({len(_files)} files)...")
-        _dirs.sort()
-        _files.sort()
-        for _pic_file in [os.path.join(_root, f) for f in _files if f[-3:].lower() in SUPPORTED_RAW_EXT]:
-            if not args.filter or args.filter in _pic_file:
-                logging.info(f" > {_pic_file[len(_root):]}")
-                collector.add_picture_file(_pic_file)
+    all_pictures: list[PictureInfo] = []
+    geo_clusters: list[PictureCluster] = []
+    locations: list[PictureLocation] = []
+    summary_rows: list[SummaryRow] = []
 
-        if not args.recursive:
-            break
-
-    SummaryRow = namedtuple("SummaryRow", 'file, date, place, new_folder, new_filename')
-    summary_rows = []
-
-    for info in collector.build_picture_list(location_strategy='full'):
-        day = datetime.strftime(info.get_date_time(), "%d")
-        date = datetime.strftime(info.get_date_time(), "%Y-%m-%d_T%H:%M:%S")
-        suffix = f"_{info.get_sequence_number():02d}" if info.get_sequence_number() else ""
-        place = info.get_place_name()
-
-        new_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
-        new_filename = f"IMG_{date}{suffix}{info.get_extension()}"
-
-        destination_file = os.path.join(new_folder, new_filename)
-
-        summary_rows.append(
-            SummaryRow(
-                os.path.basename(info.file),
-                date,
-                place,
-                new_folder[len(dest_dir):],
-                new_filename))
-
-        logging.info(f"{info.file} -> {destination_file}")
-        # if not args.dry_run:
-        #     os.makedirs(new_folder, exist_ok=True)
-        #     if os.path.exists(destination_file):
-        #         raise ValueError(f"Destination file already exists")
-        #
-        #     os.rename(file, destination_file)
+    collect()
+    move()
 
     if args.summary:
-        logging.info(tabulate.tabulate(summary_rows, headers=SummaryRow._fields))
+        print_summary()
