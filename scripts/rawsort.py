@@ -698,9 +698,9 @@ def sort_raw():
     #   *.ARW
     #
     # exiftool -geotag gps-track.gpx '-geotime<${DateTimeOriginal}' -P -overwrite_original *.ARW
+    # exiftool -geotag ../gps-track.gpx '-geotime<${DateTimeOriginal}' -api GeoMaxExtSecs=7000 -o %d%f.ARW.xmp *.ARW
     # exiftool -geotag gps-track.gpx '-geotime<${DateTimeOriginal}+00:00:00' -P -overwrite_original IMG_20251108T00040300.ARW
     # exiftool -s -G1 -time:all IMG_20251108T00040300.ARW
-    # exiftool -geotag ../gps-track.gpx '-geotime<${DateTimeOriginal}' -api GeoMaxExtSecs=7000 -o %d%f.ARW.xmp *.ARW
     # exiftool -DateTimeOriginal -SequenceNumber -sorted *.ARW
 
     # def get_place_name(_lat, _lon):
