@@ -241,7 +241,7 @@ class _IntersectionAnalysis:
         sigma = sqrt((self.circle_radius / 2) ** 2 / (-2 * log(min_score_at_radius)))
 
         # 2. Calculate Gaussian factor
-        return 1 + exp(-(self.distance_to_center ** 2) / (2 * sigma ** 2))
+        return 1 + exp(-(self.distance_to_center ** 2) / (2 * sigma ** 2)) if (2 * sigma ** 2) != 0 else 0
         # sigma = 5
         # return math.exp(-(self.distance_to_center ** 2) / (2 * sigma ** 2))
 
@@ -413,7 +413,7 @@ def _geo_decode(cluster: PictureCluster, service):
 
     logging.debug(f"Loading data for cluster {cluster.name} ({cluster.center}) through service {service}...")
 
-    _tmp_fld = os.path.join(tempfile.gettempdir(), 'phototripping')
+    _tmp_fld = os.path.join(args.cache if args.cache else tempfile.gettempdir(), 'phototripping')
     os.makedirs(_tmp_fld, exist_ok=True)
 
     _data_file = os.path.join(_tmp_fld, f'{cluster.center}-{service}.json')
@@ -701,6 +701,7 @@ if __name__ == '__main__':
 
     group = parser.add_argument_group('Location service')
     group.add_argument('-e', "--search-radius", help="Search radius", type=int, default=3000)
+    group.add_argument('--cache', help="JSON service cache folder (default is temp folder)")
 
     args = parser.parse_args()
 
