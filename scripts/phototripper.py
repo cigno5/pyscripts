@@ -296,8 +296,8 @@ class GeoTraits:
             for c in geo_data[_t_address_components]
         ]
 
-        self.intersection_analysis = _IntersectionAnalysis(self.center, self.radius, self.viewport[0],
-                                                           self.viewport[1])
+        self.intersection_analysis = _IntersectionAnalysis(self.center, self.radius, 
+                                                           self.viewport[0], self.viewport[1])
 
     def get_place_score(self, use_size_factor, use_center_factor):
         def x_score(base_score, _type):
@@ -335,8 +335,8 @@ class GeoTraits:
         return tp in self.types or tp == self.primary_type
 
     def __str__(self):
-        return f"""{self.service} ----------------------------------------------------------------------
-  - Place name........: {self.get_place_name()}
+        return f"""Place name............: {self.get_place_name()}
+  - Service...........: {self.service}
   - Place score.......: {self.get_place_score(False, False)}
   - Place score SF....: {self.get_place_score(True, False)}
   - Place score CF....: {self.get_place_score(False, True)}
@@ -371,6 +371,12 @@ class PictureLocation:
 
         if service == 'geocode':
             _traits = self.geocode_traits
+
+        if args.debug:
+            c = 0
+            for t in _traits:
+                c += 1
+                logging.info(f"Service {service} - Trait {c:2d}\n{str(t)}")
 
         return next(iter(filter(flt, _traits)), None)
 
@@ -714,6 +720,7 @@ if __name__ == '__main__':
     group = parser.add_argument_group('Location service')
     group.add_argument('-e', "--search-radius", help="Search radius", type=int, default=3000)
     group.add_argument('--cache', help="JSON service cache folder (default is temp folder)")
+    group.add_argument('--debug', action='store_true', help="Debug the geocoding decisions")
 
     args = parser.parse_args()
 
