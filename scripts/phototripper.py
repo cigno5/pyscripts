@@ -413,10 +413,22 @@ def _geo_decode(cluster: PictureCluster, service):
 
     logging.debug(f"Loading data for cluster {cluster.name} ({cluster.center}) through service {service}...")
 
-    _tmp_fld = os.path.join(args.cache if args.cache else tempfile.gettempdir(), 'phototripping')
-    os.makedirs(_tmp_fld, exist_ok=True)
+    _cache_folder = os.path.join(args.cache if args.cache else tempfile.gettempdir(), 'phototripping')
+    os.makedirs(_cache_folder, exist_ok=True)
 
-    _data_file = os.path.join(_tmp_fld, f'{cluster.center}-{service}.json')
+    # Search a cache file that is within half the search radius from the cluster's center
+    def find_cache_file():
+        _c_re = re.compile(r'\((?P<lat>-?[\d\.]+),\s(?P<lon>-?[\d\.]+)\)-(?P<service>\w+)\.json')
+        for _cache_file in os.listdir(_cache_folder):
+            _m = _c_re.match(_cache_file)
+            if _m and _m.group('service') == service:
+                cache_center = (float(_m.group('lat')), float(_m.group('lon')))
+                if _haversine(cluster.center, cache_center) < search_radius / 4:
+                    return _cache_file
+
+        return f'{cluster.center}-{service}.json'
+
+    _data_file = os.path.join(_cache_folder, find_cache_file())
 
     try:
         with open(_data_file, 'r') as df:
