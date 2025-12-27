@@ -24,7 +24,7 @@ SUPPORTED_RAW_EXT = ["arw"]
 EARTH_RADIUS = 6371000
 
 AddressSegment = namedtuple("AddressSegment", "name, types")
-SummaryRow = namedtuple("SummaryRow", 'file, date, cluster, place, new_folder, new_filename, moved')
+SummaryRow = namedtuple("SummaryRow", 'file, date, cluster, place, new_folder, new_filename, moved_files')
 
 
 class PictureInfo:
@@ -84,7 +84,7 @@ class PictureInfo:
     def get_distance(self, latlon1):
         return _haversine(self.get_latlon(), latlon1) if self.has_latlon() else None
 
-    def rename(self, dst_folder, dst_filename_root):
+    def move_files(self, dst_folder, dst_filename_root):
         from os.path import join, exists, basename, split
 
         if dst_filename_root == self.filename_root:
@@ -132,6 +132,8 @@ class PictureInfo:
                 if not args.dry_run:
                     # replace old filename inside XMP sidecar
                     change_xmp()
+
+        return new_files
 
     def __str__(self):
         return (f"File: {os.path.basename(self.file)}; "
@@ -685,12 +687,10 @@ def move():
         destination_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
         destination_basename = f"IMG_{date}{suffix}"
 
-        moved = False
-
         if not args.dry_run:
             os.makedirs(destination_folder, exist_ok=True)
-            info.rename(destination_folder, destination_basename)
-            moved = True
+
+        moved_files = info.move_files(destination_folder, destination_basename)
 
         summary_rows.append(
             SummaryRow(
@@ -700,7 +700,7 @@ def move():
                 place,
                 destination_folder[len(dest_dir):],
                 destination_basename,
-                moved))
+                len(moved_files)))
 
 
 def print_summary():
@@ -711,7 +711,7 @@ def print_summary():
             headers=SummaryRow._fields,
             tablefmt='pipe'))
 
-    SubSummaryRow = namedtuple('SubSummaryRow', 'cluster_name, place, date, moved_files, not_moved_files')
+    SubSummaryRow = namedtuple('SubSummaryRow', 'cluster_name, place, date, moved_files')
     sub_summary_rows = []
 
     _summary_recap = {}
@@ -723,20 +723,20 @@ def print_summary():
             _summary_recap[summary_row.cluster] = {}
 
         if _date not in _summary_recap[summary_row.cluster]:
-            _summary_recap[summary_row.cluster][_date] = [0, 0]
+            _summary_recap[summary_row.cluster][_date] = 0
 
-        _summary_recap[summary_row.cluster][_date][0 if summary_row.moved else 1] += 1
+        _summary_recap[summary_row.cluster][_date] += summary_row.moved_files
 
         if summary_row.cluster not in _cluster_to_place:
             _cluster_to_place[summary_row.cluster] = summary_row.place
 
     for cluster, dates in _summary_recap.items():
         _f = True
-        for date, counters in dates.items():
+        for date, counter in dates.items():
             if _f:
-                sub_summary_rows.append(SubSummaryRow(cluster, _cluster_to_place[cluster], date, counters[0], counters[1]))
+                sub_summary_rows.append(SubSummaryRow(cluster, _cluster_to_place[cluster], date, counter))
             else:
-                sub_summary_rows.append(SubSummaryRow('', '', date, counters[0], counters[1]))
+                sub_summary_rows.append(SubSummaryRow('', '', date, counter))
             _f = False
 
     logging.info('\nSummary recap ------------------------------------------------------------------------------------')
