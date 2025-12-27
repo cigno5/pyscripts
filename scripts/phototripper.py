@@ -62,8 +62,11 @@ class PictureInfo:
         self.cluster = None
         self.get_place_name = None
 
-    def get_extension(self):
-        return os.path.splitext(self.file)[-1]
+        _dirname, _basename = os.path.split(self.file)
+        self.filename = _basename
+        self.filename_root, _ = os.path.splitext(_basename)
+        self.accessory_files = [os.path.join(_dirname, f) for f in os.listdir(_dirname) 
+                                if f.startswith(self.filename_root) and f != _basename]
 
     def get_date_time(self):
         return self.tags[PictureInfo.T_DATE_TIME_ORIGINAL]
@@ -81,10 +84,54 @@ class PictureInfo:
     def get_distance(self, latlon1):
         return _haversine(self.get_latlon(), latlon1) if self.has_latlon() else None
 
-    def move(self, destination_file):
-        if os.path.exists(destination_file):
-            raise FileExistsError(f"{destination_file} already exists (from {os.path.basename(self.file)})")
-        os.rename(self.file, destination_file)
+    def rename(self, dst_folder, dst_filename_root):
+        from os.path import join, exists, basename, split
+
+        if dst_filename_root == self.filename_root:
+            logging.warning(f"Skipping renaming of {self.file} as the filename root is the same")
+            return
+
+        def new_dest_file(f):
+            _, old_basename = split(f)
+            new_basename = re.sub(f'^{re.escape(self.filename_root)}', dst_filename_root, old_basename, flags=re.IGNORECASE)
+            return join(dst_folder, new_basename)
+
+        def change_xmp():
+            dst_ = dst + '.tmp'
+            # Writes the xmp content with updated filename references
+            with open(dst, 'r', encoding='utf-8') as i, \
+                open(dst_, 'w', encoding='utf-8') as o:
+
+                for line in i.readlines():
+                    if self.filename in line:
+                        line = line.replace(self.filename, new_filename)
+                    o.write(line)
+
+            # Replace the original XMP file with the modified one
+            shutil.move(dst_, dst)
+
+        old_files = [self.file] + self.accessory_files
+        new_files = [new_dest_file(f) for f in old_files]
+
+        # check beforehands if any destination file exists
+        for _f in new_files:
+            if exists(_f):
+                raise FileExistsError(f"File {basename(_f)} already exists")
+
+        # move all the files and change the content of the xmp sidecars file
+        for src, dst in zip(old_files, new_files):
+            if (src == self.file):
+                new_filename = basename(dst)
+
+            logging.debug(f"{src[len(search_dir):]} -> {dst}")
+            if not args.dry_run:
+                shutil.move(src, dst)
+
+            if dst.lower().endswith('.xmp'):
+                logging.debug(f" > Updating XMP sidecar for {basename(dst)}")
+                if not args.dry_run:
+                    # replace old filename inside XMP sidecar
+                    change_xmp()
 
     def __str__(self):
         return (f"File: {os.path.basename(self.file)}; "
@@ -635,21 +682,15 @@ def move():
         suffix = f"_{info.get_sequence_number():02d}" if info.get_sequence_number() else ""
         place = info.get_place_name()
 
-        new_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
-        new_filename = f"IMG_{date}{suffix}{info.get_extension()}"
+        destination_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
+        destination_basename = f"IMG_{date}{suffix}"
 
-        destination_file = os.path.join(new_folder, new_filename)
         moved = False
 
-        logging.debug(f"{info.file} -> {destination_file}")
-
         if not args.dry_run:
-            os.makedirs(new_folder, exist_ok=True)
-            try:
-                info.move(destination_file)
-                moved = True
-            except FileExistsError as e:
-                logging.warning(f"Destination file {destination_file} already exists")
+            os.makedirs(destination_folder, exist_ok=True)
+            info.rename(destination_folder, destination_basename)
+            moved = True
 
         summary_rows.append(
             SummaryRow(
@@ -657,8 +698,8 @@ def move():
                 date,
                 info.cluster.name if info.cluster else None,
                 place,
-                new_folder[len(dest_dir):],
-                new_filename,
+                destination_folder[len(dest_dir):],
+                destination_basename,
                 moved))
 
 
