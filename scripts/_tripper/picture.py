@@ -70,9 +70,10 @@ class PictureInfo:
         from os.path import join, exists, basename, split
 
         def new_dest_file(f):
-            _, old_basename = split(f)
+            old_folder, old_basename = split(f)
             new_basename = re.sub(f'^{re.escape(self.filename_root)}', dst_filename_root, old_basename, flags=re.IGNORECASE)
-            return join(dst_folder, new_basename)
+            folder = old_folder if self.ctx.file_settings.rename_only else dst_folder
+            return join(folder, new_basename)
 
         def change_xmp():
             dst_ = dst + '.tmp'
