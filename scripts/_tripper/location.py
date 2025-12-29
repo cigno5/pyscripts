@@ -92,7 +92,7 @@ class _IntersectionAnalysis:
     def get_size_ratio(self):
         if self.status == "intersecting":
             return self.intersection_area / self.circle_area
-        elif self.status == 'not-intersecting':
+        elif self.status == 'not-intersecting' or self.smaller_shape_area == 0:
             return 0
         else:
             return self.bigger_shape_area / self.smaller_shape_area
@@ -228,7 +228,7 @@ class PictureLocation:
     def __init__(self, cluster: PictureCluster):
         self.cluster = cluster
         self.ctx = Context.get()
-        logging.info(f"Loading location information for cluster {cluster.name} ({cluster.center})...")
+        logging.debug(f"Loading location information for cluster {cluster.name} ({cluster.center})...")
 
         self.geocode_traits = _geo_decode(cluster, 'geocode')
         self.gplaces_traits = _geo_decode(cluster, 'gplaces')
