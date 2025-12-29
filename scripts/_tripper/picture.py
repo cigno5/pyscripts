@@ -69,10 +69,6 @@ class PictureInfo:
     def move_files(self, dst_folder, dst_filename_root):
         from os.path import join, exists, basename, split
 
-        if dst_filename_root == self.filename_root:
-            logging.warning(f"Skipping renaming of {self.file} as the filename root is the same")
-            return
-
         def new_dest_file(f):
             _, old_basename = split(f)
             new_basename = re.sub(f'^{re.escape(self.filename_root)}', dst_filename_root, old_basename, flags=re.IGNORECASE)
@@ -94,6 +90,10 @@ class PictureInfo:
 
         old_files = [self.file] + self.accessory_files
         new_files = [new_dest_file(f) for f in old_files]
+
+        if old_files[0] == new_files[0]:
+            logging.warning(f"Skipping renaming of {self.file}, as it's the same destination")
+            return []
 
         # check beforehands if any destination file exists
         for _f in new_files:
