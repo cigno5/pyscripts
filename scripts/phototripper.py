@@ -165,7 +165,7 @@ def move():
             _checkpoint_counter = 0
             logging.info(f"Processing pictures ({_pict_counter}/{len(all_pictures)})...")
 
-        if info.cluster is None:
+        if info.cluster is None or context.location_settings.strategy == 'none':
             info.get_place_name = place_none
         else:
             _location = next((_l for _l in locations if _l.cluster == info.cluster), None)
@@ -241,9 +241,19 @@ def print_summary():
             headers=SubSummaryRow._fields, tablefmt="pipe"))
 
 
+def check():
+    # initial checks
+    logging.debug("Checking pre-requisites...")
+    if not shutil.which("exiftool"):
+        raise ValueError("Exiftool is not found in this system")
+    
+    if args.rename_only and args.destination:
+        raise ValueError("Cannot specify both --rename-only and --destination options")
+
+
 def initialize_context():
     loc_settings = LocationSettings(
-        'full', 
+        'none' if args.rename_only else 'full', 
         args.search_radius, 
         args.cache if args.cache else tempfile.gettempdir()
     )
@@ -258,7 +268,8 @@ def initialize_context():
         search_dir,
         args.recursive,
         dest_dir,
-        args.dry_run
+        args.dry_run,
+        args.rename_only
     )
 
     _ctx = Context(
@@ -281,6 +292,7 @@ if __name__ == '__main__':
     file_group.add_argument('-d', "--destination", help="Destination directory")
     file_group.add_argument('-f', '--filter', help="Filter files by substring match")
     file_group.add_argument("--recursive", action='store_true', help="Scan recursively files from root directory")
+    file_group.add_argument("--rename-only", action='store_true', help="Only renames files (without moving them)")
 
     log_group = parser.add_argument_group('Logging options')
     log_group.add_argument("--verbose", action='store_true', help="Logs more")
@@ -300,15 +312,13 @@ if __name__ == '__main__':
     logging.getLogger("geopy").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
+    # performs checks
+    check()
+
     # Prepare settings
     search_dir = os.path.abspath(os.path.expanduser(args.search_dir)) if args.search_dir else os.getcwd()
     assert os.path.isdir(search_dir) and os.path.exists(search_dir), "Search directory is invalid or it doesn't exist"
     dest_dir = os.path.abspath(os.path.expanduser(args.destination)) if args.destination else search_dir
-
-    # initial checks
-    logging.debug("Checking pre-requisites...")
-    if not shutil.which("exiftool"):
-        raise ValueError("Exiftool is not found in this system")
 
     logging.debug("Initializing Phototripper...")
     api_key = load_configuration('.pyscripts-google.ini')['google']['api-key']

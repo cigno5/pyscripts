@@ -5,7 +5,7 @@ EARTH_RADIUS = 6371000
 
 LocationSettings = namedtuple("LocationSettings", "strategy, search_radius, cache_dir")
 LoggingSettings = namedtuple("LoggingSettings", "verbose, print_summary, debug")
-FileSettings = namedtuple("FileSettings", "search_dir, recursive_search, dest_dir, dry_run")
+FileSettings = namedtuple("FileSettings", "search_dir, recursive_search, dest_dir, dry_run, rename_only")
 
 class Context:
     context: 'Context' = None
