@@ -5,7 +5,8 @@ EARTH_RADIUS = 6371000
 
 LocationSettings = namedtuple("LocationSettings", "strategy, search_radius, cache_dir")
 LoggingSettings = namedtuple("LoggingSettings", "verbose, print_summary, debug")
-FileSettings = namedtuple("FileSettings", "search_dir, recursive_search, dest_dir, dry_run, rename_only")
+FileSettings = namedtuple("FileSettings", "search_dir, recursive_search, dest_dir, dry_run, rename_only, rename_pattern")
+
 
 class Context:
     context: 'Context' = None
@@ -33,7 +34,8 @@ class Context:
         if Context.context is None:
             raise RuntimeError("Context has not been initalized yet")
         return Context.context
-    
+
+
 def haversine(latlon1, latlon2):
     d_lat = radians(latlon2[0] - latlon1[0])
     d_lon = radians(latlon2[1] - latlon1[1])

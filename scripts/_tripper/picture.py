@@ -1,12 +1,14 @@
-from math import radians, sin, cos, sqrt, asin
-from datetime import datetime
-import re
-import subprocess
-import os
-import shutil
 import logging
+import os
+import re
+import shutil
+import subprocess
+from datetime import datetime
 from functools import reduce
-from .common import haversine, Context
+from math import sqrt
+
+from common import haversine, Context
+
 
 class PictureInfo:
     T_DATE_TIME_ORIGINAL = "DateTimeOriginal"
@@ -47,7 +49,7 @@ class PictureInfo:
         _dirname, _basename = os.path.split(self.file)
         self.filename = _basename
         self.filename_root, _ = os.path.splitext(_basename)
-        self.accessory_files = [os.path.join(_dirname, f) for f in os.listdir(_dirname) 
+        self.accessory_files = [os.path.join(_dirname, f) for f in os.listdir(_dirname)
                                 if f.startswith(self.filename_root) and f != _basename]
 
     def get_date_time(self):
@@ -71,16 +73,17 @@ class PictureInfo:
 
         def new_dest_file(f):
             old_folder, old_basename = split(f)
-            new_basename = re.sub(f'^{re.escape(self.filename_root)}', dst_filename_root, old_basename, flags=re.IGNORECASE)
+            new_basename = re.sub(f'^{re.escape(self.filename_root)}',
+                                  dst_filename_root,
+                                  old_basename,
+                                  flags=re.IGNORECASE)
             folder = old_folder if self.ctx.file_settings.rename_only else dst_folder
             return join(folder, new_basename)
 
         def change_xmp():
             dst_ = dst + '.tmp'
             # Writes the xmp content with updated filename references
-            with open(dst, 'r', encoding='utf-8') as i, \
-                open(dst_, 'w', encoding='utf-8') as o:
-
+            with open(dst, 'r', encoding='utf-8') as i, open(dst_, 'w', encoding='utf-8') as o:
                 for line in i.readlines():
                     if self.filename in line:
                         line = line.replace(self.filename, new_filename)
@@ -96,14 +99,14 @@ class PictureInfo:
             logging.warning(f"Skipping renaming of {self.file}, as it's the same destination")
             return []
 
-        # check beforehands if any destination file exists
+        # check beforehand if any destination file exists
         for _f in new_files:
             if exists(_f):
                 raise FileExistsError(f"File {basename(_f)} already exists")
 
         # move all the files and change the content of the xmp sidecars file
         for src, dst in zip(old_files, new_files):
-            if (src == self.file):
+            if src == self.file:
                 new_filename = basename(dst)
 
             logging.debug(f"{src[len(self.ctx.file_settings.search_dir):]} -> {dst}")

@@ -1,32 +1,63 @@
 import argparse
-import json
 import logging
 import os
-import random
 import re
 import shutil
-import subprocess
 import tempfile
 import time
 from collections import namedtuple
 from datetime import datetime
-from functools import reduce
-from math import radians, asin, sqrt, cos, sin, pi, exp, log
+from math import radians, cos, sin
 
 import googlemaps
-import requests
 import tabulate
 from unidecode import unidecode
 
 from _common import load_configuration
-
 from _tripper.common import Context, LocationSettings, LoggingSettings, FileSettings
 from _tripper.location import GeoTraits, PictureLocation
 from _tripper.picture import PictureInfo, PictureCluster
 
 SUPPORTED_RAW_EXT = ["arw"]
 
+VARS_RE = re.compile(r"(?P<prefix>[\s\-_]+)?(\{(?P<var>\w+)(:(?P<format>\w+))?\})")
+
+VARS = {
+    'datetime': lambda pic, fmt: datetime.strftime(pic.get_date_time(), fmt),
+    'date': lambda pic, fmt: datetime.strftime(pic.get_date_time(), fmt),
+    'time': lambda pic, fmt: datetime.strftime(pic.get_date_time(), fmt),
+    'day': lambda pic, _=None: datetime.strftime(pic.get_date_time(), "%d"),
+    'month': lambda pic, fmt: datetime.strftime(pic.get_date_time(), fmt),
+    'year': lambda pic, _=None: datetime.strftime(pic.get_date_time(), "%Y"),
+    'sequence': lambda pic, _=None: f"{pic.get_sequence_number():02d}" if pic.get_sequence_number() else None,
+    'place': lambda pic, _=None: pic.get_place_name(),
+}
+
+VARS_FORMAT = {
+    'datetime': {
+        'extended': "%Y-%m-%dT%H:%M:%S",
+        'compact': "%Y%m%dT%H%M%S",
+        '$default': 'compact'
+    },
+    'date': {
+        'extended': "%Y-%m-%d",
+        'compact': "%Y%m%d",
+        '$default': 'compact'
+    },
+    'time': {
+        'extended': "%H:%M:%S",
+        'compact': "%H%M%S",
+        '$default': 'compact'
+    },
+    'month': {
+        'number': "%m",
+        'name': "%B",
+        '$default': 'number'
+    }
+}
+
 SummaryRow = namedtuple("SummaryRow", 'file, date, cluster, place, new_folder, new_filename, moved_files')
+
 
 def _traits_to_geojson(cluster, traits):
     num_circle_points = 64
@@ -99,6 +130,36 @@ def _traits_to_geojson(cluster, traits):
             *[rect_feature(geotrait) for geotrait in traits]
         ]
     }
+
+
+def _get_new_name(template, pic: PictureInfo):
+    m = VARS_RE.search(template)
+    while m:
+        _var = m.group('var')
+        _fmt = m.group('format')
+        _prefix = m.group('prefix')
+
+        if _var in VARS:
+            if _fmt:
+                if _var in VARS_FORMAT and _fmt in VARS_FORMAT[_var]:
+                    _fmt = VARS_FORMAT[_var][_fmt]
+                else:
+                    raise ValueError(f"Unknown format {_fmt} for variable {_var}")
+            else:
+                if _var in VARS_FORMAT:
+                    _fmt = VARS_FORMAT[_var][VARS_FORMAT[_var]['$default']]
+
+            replacement = VARS[_var](pic, _fmt)
+            if replacement:
+                template = template.replace(m.group(0), f"{_prefix if _prefix else ''}{replacement}", 1)
+            else:
+                template = template.replace(m.group(0), "", 1)
+        else:
+            raise ValueError(f"Unknown variable: {_var}")
+
+        m = VARS_RE.search(template)
+
+    return template
 
 
 def collect():
@@ -174,13 +235,16 @@ def move():
                 locations.append(_location)
             info.get_place_name = place_full_strategy
 
-        day = datetime.strftime(info.get_date_time(), "%d")
-        date = datetime.strftime(info.get_date_time(), "%Y-%m-%d_T%H:%M:%S")
-        suffix = f"_{info.get_sequence_number():02d}" if info.get_sequence_number() else ""
-        place = info.get_place_name()
+        # day = datetime.strftime(info.get_date_time(), "%d")
+        # date = datetime.strftime(info.get_date_time(), "%Y-%m-%d_T%H:%M:%S")
+        # suffix = f"_{info.get_sequence_number():02d}" if info.get_sequence_number() else ""
+        # place = info.get_place_name()
 
-        destination_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
-        destination_basename = f"IMG_{date}{suffix}"
+        # destination_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
+        # destination_basename = f"IMG_{date}{suffix}"
+
+        destination_folder, destination_basename = (
+            os.path.split(_get_new_name(context.file_settings.rename_pattern, info)))
 
         if not args.dry_run:
             os.makedirs(destination_folder, exist_ok=True)
@@ -199,7 +263,8 @@ def move():
 
 
 def print_summary():
-    logging.debug('\nSummary ------------------------------------------------------------------------------------------')
+    logging.debug(
+        '\nSummary ------------------------------------------------------------------------------------------')
     logging.debug(
         tabulate.tabulate(
             summary_rows,
@@ -246,15 +311,15 @@ def check():
     logging.debug("Checking pre-requisites...")
     if not shutil.which("exiftool"):
         raise ValueError("Exiftool is not found in this system")
-    
+
     if args.rename_only and args.destination:
         raise ValueError("Cannot specify both --rename-only and --destination options")
 
 
 def initialize_context():
     loc_settings = LocationSettings(
-        'none' if args.rename_only else 'full', 
-        args.search_radius, 
+        'none' if args.rename_only else 'full',
+        args.search_radius,
         args.cache if args.cache else tempfile.gettempdir()
     )
 
@@ -269,7 +334,8 @@ def initialize_context():
         args.recursive,
         dest_dir,
         args.dry_run,
-        args.rename_only
+        args.rename_only,
+        args.rename_pattern
     )
 
     _ctx = Context(
@@ -286,13 +352,35 @@ def initialize_context():
 
 
 if __name__ == '__main__':
+    def _vvv_fff(_v):
+        _f = None
+        if _v in VARS_FORMAT:
+            _df = VARS_FORMAT[_v]['$default']
+            _f = ', '.join(['*' + _df] + [f"{_fk}{'*' if _df == _fk else ''}"
+                                          for _fk in VARS_FORMAT[_v].keys()
+                                          if _fk not in ('$default', _df)])
+
+        if _f:
+            return f"'{_v}' ({_f})"
+        else:
+            return f"'{_v}'"
+
     parser = argparse.ArgumentParser()
     file_group = parser.add_argument_group('File options')
     file_group.add_argument('-s', "--search-dir", help="Search directory")
     file_group.add_argument('-d', "--destination", help="Destination directory")
-    file_group.add_argument('-f', '--filter', help="Filter files by substring match")
+    file_group.add_argument('--filter', help="Filter files by substring match")
     file_group.add_argument("--recursive", action='store_true', help="Scan recursively files from root directory")
     file_group.add_argument("--rename-only", action='store_true', help="Only renames files (without moving them)")
+    file_group.add_argument('-f', '--rename-format', default='{day} - {place}/IMG_{datetime:extended}_{sequence}',
+                            help=f"""
+Renames files according to the specified format, using substitution variables with syntax '{{<var>[:<format>]}}'. 
+A slash will create a folder.  
+Any dash, space or underscore before the variable will be stripped away if the variable can't be retrieved. 
+The following variables are supported (star=default): {", ".join([_vvv_fff(_v) for _v in VARS.keys()])}.
+Eg: '{{year}}/{{month}} - {{month:name}}/{{day}} - {{place}}/IMG_{{datetime}}_{{sequence}}' --> 
+'2023/03 - March/15 - New York/IMG_20230315T143000_05'.
+Default is '{{day}} - {{place}}/IMG_{{datetime:extended}}_{{sequence}}'""")
 
     log_group = parser.add_argument_group('Logging options')
     log_group.add_argument("--verbose", action='store_true', help="Logs more")
@@ -331,18 +419,18 @@ if __name__ == '__main__':
 
     context: Context = initialize_context()
 
-#     logging.info(f"""=====================================================================
-# Phototripper, a useless photo organizer!
+    #     logging.info(f"""=====================================================================
+    # Phototripper, a useless photo organizer!
 
-# Search directory.......: {args.search_dir}
-# Recursive scan.........: {'yes' if args.recursive else 'no'}
-# Destination directory..: {dest_dir}
+    # Search directory.......: {args.search_dir}
+    # Recursive scan.........: {'yes' if args.recursive else 'no'}
+    # Destination directory..: {dest_dir}
 
-# Verbose mode...........: {'yes' if args.verbose else 'no'}
-# Dry run................: {'yes' if args.dry_run else 'no'}
+    # Verbose mode...........: {'yes' if args.verbose else 'no'}
+    # Dry run................: {'yes' if args.dry_run else 'no'}
 
-# Print summary..........: {'yes' if args.summary else 'no'}
-# """)
+    # Print summary..........: {'yes' if args.summary else 'no'}
+    # """)
 
     start_time = time.perf_counter()
 
