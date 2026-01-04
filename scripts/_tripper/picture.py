@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import reduce
 from math import sqrt
 
-from common import haversine, Context
+from .common import haversine, Context
 
 
 class PictureInfo:

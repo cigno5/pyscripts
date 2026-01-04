@@ -254,9 +254,9 @@ def move():
         summary_rows.append(
             SummaryRow(
                 os.path.basename(info.file),
-                date,
+                info.get_date_time().strftime("%Y-%m-%d %H:%M:%S"),
                 info.cluster.name if info.cluster else None,
-                place,
+                info.get_place_name(),
                 destination_folder[len(dest_dir):],
                 destination_basename,
                 len(moved_files)))
@@ -318,7 +318,7 @@ def check():
 
 def initialize_context():
     loc_settings = LocationSettings(
-        'none' if args.rename_only else 'full',
+        'full',
         args.search_radius,
         args.cache if args.cache else tempfile.gettempdir()
     )
@@ -335,7 +335,7 @@ def initialize_context():
         dest_dir,
         args.dry_run,
         args.rename_only,
-        args.rename_pattern
+        args.rename_format
     )
 
     _ctx = Context(
@@ -419,7 +419,10 @@ Default is '{{day}} - {{place}}/IMG_{{datetime:extended}}_{{sequence}}'""")
 
     context: Context = initialize_context()
 
-    #     logging.info(f"""=====================================================================
+    if args.summary:
+        logging.info("============================================================================")
+        logging.info(context.to_summary())
+
     # Phototripper, a useless photo organizer!
 
     # Search directory.......: {args.search_dir}

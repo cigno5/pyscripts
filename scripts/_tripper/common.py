@@ -23,6 +23,26 @@ class Context:
         self.gmaps = gmaps
         self.api_key = api_key
 
+    def to_summary(self):
+        return f"""File settings:
+    Search directory        : {self.file_settings.search_dir}
+    Recursive search        : {'yes' if self.file_settings.recursive_search else 'no'}
+    Destination directory   : {self.file_settings.dest_dir}
+    Dry run                 : {'yes' if self.file_settings.dry_run else 'no'}
+    Rename only             : {'yes' if self.file_settings.rename_only else 'no'}
+    Rename pattern          : {self.file_settings.rename_pattern}
+
+Location settings:
+    Strategy                : {self.location_settings.strategy}
+    Search radius (m)       : {self.location_settings.search_radius}
+    Cache directory         : {self.location_settings.cache_dir}
+
+Logging settings:
+    Verbose                 : {'yes' if self.logging_settings.verbose else 'no'}
+    Print summary           : {'yes' if self.logging_settings.print_summary else 'no'}
+    Debug                   : {'yes' if self.logging_settings.debug else 'no'}
+"""
+
     @staticmethod
     def set(ctx: 'Context'):
         if Context.context is not None:
