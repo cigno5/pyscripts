@@ -70,10 +70,13 @@ def read_transactions():
 
 
 def load_settings():
-    if args.password:
-        _password = args.password
+    if args.username:
+        if args.password:
+            _password = args.password
+        else:
+            _password = getpass.getpass(prompt='Please input your password')
     else:
-        _password = getpass.getpass(prompt='Please input your password')
+        _password = None
 
     if args.from_date:
         try:
@@ -130,7 +133,7 @@ def export_transactions():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("username", help="Username")
+    parser.add_argument("--username", help="Username")
     parser.add_argument("-p", "--password", help="Password, if not specified it will be requested")
     parser.add_argument("-c", "--config", help="Abnconv.ini configuration file (as for abnconv script)")
 
