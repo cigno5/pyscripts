@@ -29,7 +29,7 @@ VARS = {
     'day': lambda pic, _=None: datetime.strftime(pic.get_date_time(), "%d"),
     'month': lambda pic, fmt: datetime.strftime(pic.get_date_time(), fmt),
     'year': lambda pic, _=None: datetime.strftime(pic.get_date_time(), "%Y"),
-    'sequence': lambda pic, _=None: f"{pic.get_sequence_number():02d}" if pic.get_sequence_number() else None,
+    'sequence': lambda pic, repl: None if pic.get_sequence_number() is None and repl is None else f"{pic.get_sequence_number() or repl:02d}",
     'place': lambda pic, _=None: pic.get_place_name(),
 }
 
@@ -53,7 +53,12 @@ VARS_FORMAT = {
         'number': "%m",
         'name': "%B",
         '$default': 'number'
-    }
+    },
+    'sequence': {
+        'none': None,
+        'zero': 0,
+        '$default': 'none'
+    },
 }
 
 SummaryRow = namedtuple("SummaryRow", 'file, new_file, date, cluster, place, moved_files')
@@ -363,6 +368,7 @@ if __name__ == '__main__':
             return f"'{_v}' ({_f})"
         else:
             return f"'{_v}'"
+
 
     parser = argparse.ArgumentParser()
     file_group = parser.add_argument_group('File options')
