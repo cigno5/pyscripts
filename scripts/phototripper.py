@@ -56,7 +56,7 @@ VARS_FORMAT = {
     }
 }
 
-SummaryRow = namedtuple("SummaryRow", 'file, date, cluster, place, new_folder, new_filename, moved_files')
+SummaryRow = namedtuple("SummaryRow", 'file, new_file, date, cluster, place, moved_files')
 
 
 def _traits_to_geojson(cluster, traits):
@@ -243,8 +243,8 @@ def move():
         # destination_folder = os.path.join(dest_dir, f"{day} - {place}" if place else day)
         # destination_basename = f"IMG_{date}{suffix}"
 
-        destination_folder, destination_basename = (
-            os.path.split(_get_new_name(context.file_settings.rename_pattern, info)))
+        destination = os.path.join(dest_dir, _get_new_name(context.file_settings.rename_pattern, info))
+        destination_folder, destination_basename = os.path.split(destination)
 
         if not args.dry_run:
             os.makedirs(destination_folder, exist_ok=True)
@@ -253,19 +253,18 @@ def move():
 
         summary_rows.append(
             SummaryRow(
-                os.path.basename(info.file),
+                info.file[len(search_dir):],
+                destination[len(dest_dir):],
                 info.get_date_time().strftime("%Y-%m-%d %H:%M:%S"),
                 info.cluster.name if info.cluster else None,
                 info.get_place_name(),
-                destination_folder[len(dest_dir):],
-                destination_basename,
                 len(moved_files)))
 
 
 def print_summary():
-    logging.debug(
+    logging.info(
         '\nSummary ------------------------------------------------------------------------------------------')
-    logging.debug(
+    logging.info(
         tabulate.tabulate(
             summary_rows,
             headers=SummaryRow._fields,
@@ -318,7 +317,7 @@ def check():
 
 def initialize_context():
     loc_settings = LocationSettings(
-        'full',
+        'none' if args.skip_location else 'full',
         args.search_radius,
         args.cache if args.cache else tempfile.gettempdir()
     )
@@ -388,6 +387,7 @@ Default is '{{day}} - {{place}}/IMG_{{datetime:extended}}_{{sequence}}'""")
     log_group.add_argument("--dry-run", action='store_true', help="Don't move/rename files")
 
     loc_group = parser.add_argument_group('Location service')
+    loc_group.add_argument("--skip-location", action='store_true', help="Don't use location services")
     loc_group.add_argument("--search-radius", help="Search radius", type=int, default=3000)
     loc_group.add_argument("--cache", help="JSON service cache folder (default is temp folder)")
     loc_group.add_argument("--debug", action='store_true', help="Debug geocoding decisions")
@@ -422,18 +422,6 @@ Default is '{{day}} - {{place}}/IMG_{{datetime:extended}}_{{sequence}}'""")
     if args.summary:
         logging.info("============================================================================")
         logging.info(context.to_summary())
-
-    # Phototripper, a useless photo organizer!
-
-    # Search directory.......: {args.search_dir}
-    # Recursive scan.........: {'yes' if args.recursive else 'no'}
-    # Destination directory..: {dest_dir}
-
-    # Verbose mode...........: {'yes' if args.verbose else 'no'}
-    # Dry run................: {'yes' if args.dry_run else 'no'}
-
-    # Print summary..........: {'yes' if args.summary else 'no'}
-    # """)
 
     start_time = time.perf_counter()
 
