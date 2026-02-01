@@ -16,19 +16,19 @@ Account = collections.namedtuple('Account', 'iban,name,ics_account,ics_debit_iba
 
 ns = {'xmlns': "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"}
 
-BEA_re = re.compile("(?P<subtype>[GB])EA, (Betaalpas|Google Pay)\s+(?P<payee>.+),(?P<pas>PAS\d+)\s+(?P<code>NR:[\w\d]+),?\s+(?P<datetime>[\d\.]{8}\/[\d\.:]{5})\s+(?P<place>.+)")
+BEA_re = re.compile(r"(?P<subtype>[GB])EA, (Betaalpas|Google Pay)\s+(?P<payee>.+),(?P<pas>PAS\d+)\s+(?P<code>NR:[\w\d]+),?\s+(?P<datetime>[\d.]{8}/[\d.:]{5})\s+(?P<place>.+)")
 
 SEPA_re = re.compile("(/(TRTP|RTYP)/|^SEPA).+")
-SEPA_markers_re = re.compile("/(?P<field>\w+)/(?P<value>.+?)(?=(/|$))")
-SEPA_markers2_re = re.compile("(?P<field>\w+):\s(?P<value>.+?)(?=(\s+\w+:|$))")
+SEPA_markers_re = re.compile(r"/(?P<field>\w+)/(?P<value>.+?)(?=(/|$))")
+SEPA_markers2_re = re.compile(r"(?P<field>\w+):\s(?P<value>.+?)(?=(\s+\w+:|$))")
 
-ABN_re = re.compile("(?P<payee>ABN AMRO Bank N.V.)\s+(?P<memo>\w+).+")
+ABN_re = re.compile(r"(?P<payee>ABN AMRO Bank N.V.)\s+(?P<memo>\w+).+")
 
-SPAREN_re = re.compile("ACCOUNT BALANCED\s+(?P<memo>CREDIT INTEREST.+)For interest rates")
+SPAREN_re = re.compile(r"ACCOUNT BALANCED\s+(?P<memo>CREDIT INTEREST.+)For interest rates")
 
-STORTING_re = re.compile("STORTING\s+.+,PAS (\d+)")
+STORTING_re = re.compile(r"STORTING\s+.+,PAS (\d+)")
 
-TIKKIE_re = re.compile("/REMI/(?P<memo>(?P<id>Tikkie ID \d+),\s*(?P<info>.+?),\s*Van\s+(?P<payee>.+?),\s*(?P<iban>\w\w\d\d[\w\d]{4}\d{10,}))")
+TIKKIE_re = re.compile(r"/REMI/(?P<memo>(?P<id>Tikkie ID \d+),\s*(?P<info>.+?),\s*Van\s+(?P<payee>.+?),\s*(?P<iban>\w\w\d\d[\w\d]{4}\d{10,}))")
 
 SUPPORTED_TRANSACTIONS = {
     'tikkie': TIKKIE_re,
@@ -168,6 +168,9 @@ def process_entry(account_iban, elem):
         tsx.amount *= -1
 
     transaction_info = elem.find("xmlns:AddtlNtryInf", namespaces=ns).text
+
+    # fix the idiotic idea to change "iDeal" into "iDeal/wero" (yes, with the slash, which is not escaped)
+    transaction_info = transaction_info.replace('iDEAL/Wero', 'iDEAL-Wero')
 
     tx_type, match = _get_regex()
 
