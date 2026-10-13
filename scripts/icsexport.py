@@ -61,9 +61,15 @@ def read_transactions():
 
     account_transactions = json.loads(all_lines)
 
+    # the pasted JSON has no account number: use the only account with 'ics_account' in the configuration
+    ics_accounts = [a.ics_account for a in abnconv.accounts.values() if a.ics_account]
+    if len(ics_accounts) != 1:
+        raise ValueError("Expected exactly one account with 'ics_account' in configuration, found %d"
+                         % len(ics_accounts))
+
     all_transactions = list()
     for account_transaction in account_transactions:
-        account_transaction['accountNumber'] = '***REMOVED***'
+        account_transaction['accountNumber'] = ics_accounts[0]
         all_transactions.append(account_transaction)
 
     return all_transactions
